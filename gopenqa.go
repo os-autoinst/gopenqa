@@ -52,6 +52,19 @@ type Settings struct {
 	Machine string `json:"MACHINE"`
 }
 
+/* Worker instance */
+type Worker struct {
+	Alive      int               `json:"alive"`
+	Connected  int               `json:"connected"`
+	Error      string            `json:"error"` // Error string if present
+	Host       string            `json:"host"`
+	ID         int               `json:"id"`
+	Instance   int               `json:"instance"`
+	Status     string            `json:"status"`
+	Websocket  int               `json:"websocket"`
+	Properties map[string]string `json:"properties"` // Worker properties as returned by openQA
+}
+
 /* Instance defines a openQA instance */
 type Instance struct {
 	URL string
@@ -169,6 +182,11 @@ func (i *Instance) GetJobGroups() ([]JobGroup, error) {
 	return fetchJobGroups(url)
 }
 
+func (i *Instance) GetWorkers() ([]Worker, error) {
+	url := fmt.Sprintf("%s/api/v1/workers", i.URL)
+	return fetchWorkers(url)
+}
+
 func fetchJobs(url string) ([]Job, error) {
 	jobs := make([]Job, 0)
 	r, err := http.Get(url)
@@ -193,6 +211,23 @@ func fetchJobGroups(url string) ([]JobGroup, error) {
 	}
 	err = json.NewDecoder(r.Body).Decode(&jobs)
 	return jobs, err
+}
+
+func fetchWorkers(url string) ([]Worker, error) {
+	r, err := http.Get(url)
+	if err != nil {
+		return make([]Worker, 0), err
+	}
+	if r.StatusCode != 200 {
+		return make([]Worker, 0), fmt.Errorf("http status code %d", r.StatusCode)
+	}
+	// workers come in a "workers:[...]" dict
+	workers := make(map[string][]Worker, 0)
+	err = json.NewDecoder(r.Body).Decode(&workers)
+	if workers, ok := workers["workers"]; ok {
+		return workers, err
+	}
+	return make([]Worker, 0), nil
 }
 
 func fetchJob(url string) (Job, error) {
