@@ -254,7 +254,7 @@ func mergeParams(params map[string]string) string {
 	}
 	vals := make([]string, 0)
 	for k, v := range params {
-		vals = append(vals, fmt.Sprintf("&%s=%s", k, v))
+		vals = append(vals, fmt.Sprintf("%s=%s", k, v))
 	}
-	return strings.Join(vals, "&")[1:] // remove first '&'
+	return strings.Join(vals, "&")
 }
