@@ -9,6 +9,22 @@ import (
 	"github.com/streadway/amqp"
 )
 
+// JobStatus is the returns struct for job status updates from RabbitMQ
+type JobStatus struct {
+	Arch string `json:"ARCH"`
+	Build string `json:"BUILD"`
+	Flavor string `json:"FLAVOR"`
+	Machine string `json:"MACHINE"`
+	Test string  `json:"TEST"`
+	BugRef string `json:"bugref"`
+	GroupID int `json:"group_id"`
+	ID int `json:"id"`
+	NewBuild string `json:"newbuild"`
+	Reason string `json:"reason"`
+	Remaining int `json:"remaining"`
+	Result string `json:"result"`
+}
+
 // RabbitMQ struct is the object which handles the connection to a RabbitMQ instance
 type RabbitMQ struct {
 	remote string
@@ -50,6 +66,21 @@ func (sub *RabbitMQSubscription) ReceiveJob() (Job, error) {
 	}
 
 	return job, err
+}
+
+// ReceiveJobStatus receives the next message and try to parse it as JobStatus. Use this for job status updates
+func (sub *RabbitMQSubscription) ReceiveJobStatus() (JobStatus, error) {
+	var status JobStatus
+	d, err := sub.Receive()
+	if err != nil {
+		return status, err
+	}
+	// Try to unmarshall to json
+	err = json.Unmarshal(d.Body, &status)
+	if err != nil {
+		return status, err
+	}
+	return status, err
 }
 
 // Close subscription channel
