@@ -27,9 +27,9 @@ type Job struct {
 	Tstarted  string   `json:"t_started"`
 	Test      string   `json:"test"`
 	/* this is added by the program and not part of the fetched json */
-	Link   string
-	Remote string
-	Prefix string
+	Link     string
+	Prefix   string
+	instance *Instance
 }
 
 type JobGroup struct {
@@ -96,6 +96,14 @@ func CreateO3Instance() Instance {
 	return CreateInstance("https://openqa.opensuse.org")
 }
 
+func assignInstance(jobs []Job, instance *Instance) []Job {
+	for i, j := range jobs {
+		j.instance = instance
+		jobs[i] = j
+	}
+	return jobs
+}
+
 /* Query the job overview. params is a map for optional parameters, which will be added to the query.
  * Suitable parameters are `arch`, `distri`, `flavor`, `machine` or `arch`, but everything in this dict will be added to the url
  * Overview returns only the job id and name
@@ -116,7 +124,9 @@ func (i *Instance) GetOverview(testsuite string, params map[string]string) ([]Jo
 		url += "?" + mergeParams(params)
 	}
 
-	return fetchJobs(url)
+	jobs, err := fetchJobs(url)
+	assignInstance(jobs, i)
+	return jobs, err
 }
 
 /* Get only the latest jobs of a certain testsuite. Testsuite must be given here.
@@ -149,6 +159,7 @@ func (i *Instance) GetLatestJobs(testsuite string, params map[string]string) ([]
 	// Now, get only the latest job per group_id
 	mapped := make(map[int]Job)
 	for _, job := range jobs.Jobs {
+		job.instance = i
 		// TODO: Filter job results, if given
 
 		// Only keep newer jobs (by ID) per group
@@ -174,6 +185,7 @@ func (i *Instance) GetJob(id int) (Job, error) {
 	url := fmt.Sprintf("%s/api/v1/jobs/%d", i.URL, id)
 	job, err := fetchJob(url)
 	job.Link = fmt.Sprintf("%s/tests/%d", i.URL, id)
+	job.instance = i
 	return job, err
 }
 
@@ -257,4 +269,37 @@ func mergeParams(params map[string]string) string {
 		vals = append(vals, fmt.Sprintf("%s=%s", k, v))
 	}
 	return strings.Join(vals, "&")
+}
+
+/*
+ * Fetch the given child jobs. Use with j.Children.Chained, j.Children.DirectlyChained and j.Children.Parallel
+ * if follow is set to true, the method will return the cloned job instead of the original one, if present
+ */
+func (j *Job) FetchChildren(children []int, follow bool) ([]Job, error) {
+	jobs := make([]Job, 0)
+	for _, id := range children {
+	fetchJob:
+		job, err := j.instance.GetJob(id)
+		if err != nil {
+			return jobs, err
+		}
+		if follow && job.CloneID != 0 && job.CloneID != job.ID {
+			id = job.CloneID
+			goto fetchJob
+		}
+		jobs = append(jobs, job)
+	}
+
+	return jobs, nil
+}
+
+/* Fetch all child jobs
+ * follow determines if we should follow the given children, i.e. get their cloned jobs instead of the original ones if present
+ */
+func (j *Job) FetchAllChildren(follow bool) ([]Job, error) {
+	children := make([]int, 0)
+	children = append(children, j.Children.Chained...)
+	children = append(children, j.Children.DirectlyChained...)
+	children = append(children, j.Children.Parallel...)
+	return j.FetchChildren(children, follow)
 }
