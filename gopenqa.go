@@ -67,7 +67,8 @@ type Worker struct {
 
 /* Instance defines a openQA instance */
 type Instance struct {
-	URL string
+	URL           string
+	maxRecursions int // Maximum number of recursions
 }
 
 /* Format job as a string */
@@ -87,13 +88,18 @@ func EmptyParams() map[string]string {
 
 /* Create a openQA instance module */
 func CreateInstance(url string) Instance {
-	inst := Instance{URL: url}
+	inst := Instance{URL: url, maxRecursions: 10}
 	return inst
 }
 
 /* Create a openQA instance module for openqa.opensuse.org */
 func CreateO3Instance() Instance {
 	return CreateInstance("https://openqa.opensuse.org")
+}
+
+// Set the maximum allowed number of recursions before failing
+func (i *Instance) SetMaxRecursionDepth(depth int) {
+	i.maxRecursions = depth
 }
 
 func assignInstance(jobs []Job, instance *Instance) []Job {
@@ -189,6 +195,25 @@ func (i *Instance) GetJob(id int) (Job, error) {
 	return job, err
 }
 
+// GetJob fetches detailled job information and follows the job, if it contains a CloneID
+func (i *Instance) GetJobFollow(id int) (Job, error) {
+	recursions := 0 // keep track of the number of recursions
+fetch:
+	url := fmt.Sprintf("%s/api/v1/jobs/%d", i.URL, id)
+	job, err := fetchJob(url)
+	if job.CloneID != 0 && job.CloneID != job.ID {
+		recursions++
+		if i.maxRecursions != 0 && recursions >= i.maxRecursions {
+			return job, fmt.Errorf("maximum recusion depth reached")
+		}
+		id = job.CloneID
+		goto fetch
+	}
+	job.Link = fmt.Sprintf("%s/tests/%d", i.URL, id)
+	job.instance = i
+	return job, err
+}
+
 func (i *Instance) GetJobGroups() ([]JobGroup, error) {
 	url := fmt.Sprintf("%s/api/v1/job_groups", i.URL)
 	return fetchJobGroups(url)
@@ -278,14 +303,9 @@ func mergeParams(params map[string]string) string {
 func (j *Job) FetchChildren(children []int, follow bool) ([]Job, error) {
 	jobs := make([]Job, 0)
 	for _, id := range children {
-	fetchJob:
-		job, err := j.instance.GetJob(id)
+		job, err := j.instance.GetJobFollow(id)
 		if err != nil {
 			return jobs, err
-		}
-		if follow && job.CloneID != 0 && job.CloneID != job.ID {
-			id = job.CloneID
-			goto fetchJob
 		}
 		jobs = append(jobs, job)
 	}
