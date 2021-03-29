@@ -1,16 +1,60 @@
 package gopenqa
 
 import (
+	"bytes"
+	"crypto/hmac"
+	"crypto/sha1"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"net/http"
+	"net/url"
+	"os"
 	"strings"
+	"time"
 )
 
 /* Instance defines a openQA instance */
 type Instance struct {
 	URL           string
+	apikey        string
+	apisecret     string
+	verbose       bool
 	maxRecursions int // Maximum number of recursions
+}
+
+// the settings are given as a bit of a weird dict:
+// e.g. "settings":[{"key":"WORKER_CLASS","value":"\"plebs\""}]}]
+// We create an internal struct to account for that
+type weirdMachine struct {
+	ID       int                 `json:"id"`
+	Backend  string              `json:"backend"`
+	Name     string              `json:"name"`
+	Settings []map[string]string `json:"settings"`
+}
+
+func (mach *weirdMachine) CopySettingsFrom(src Machine) {
+	mach.Settings = make([]map[string]string, 0)
+	for k, v := range src.Settings {
+		setting := make(map[string]string, 0)
+		setting["key"] = k
+		setting["value"] = v
+		mach.Settings = append(mach.Settings, setting)
+	}
+}
+func (mach *weirdMachine) CopySettingsTo(dst *Machine) {
+	dst.Settings = make(map[string]string)
+	for _, s := range mach.Settings {
+		k, ok := s["key"]
+		if !ok {
+			continue
+		}
+		v, ok := s["value"]
+		if !ok {
+			continue
+		}
+		dst.Settings[k] = v
+	}
 }
 
 /* Format job as a string */
@@ -30,7 +74,7 @@ func EmptyParams() map[string]string {
 
 /* Create a openQA instance module */
 func CreateInstance(url string) Instance {
-	inst := Instance{URL: url, maxRecursions: 10}
+	inst := Instance{URL: url, maxRecursions: 10, verbose: false}
 	return inst
 }
 
@@ -44,12 +88,105 @@ func (i *Instance) SetMaxRecursionDepth(depth int) {
 	i.maxRecursions = depth
 }
 
+// Set the API key and secret
+func (i *Instance) SetApiKey(key string, secret string) {
+	i.apikey = key
+	i.apisecret = secret
+}
+
+func (i *Instance) SetVerbose(verbose bool) {
+	i.verbose = verbose
+}
+
 func assignInstance(jobs []Job, instance *Instance) []Job {
 	for i, j := range jobs {
 		j.instance = instance
 		jobs[i] = j
 	}
 	return jobs
+}
+
+func hmac_sha1(secret string, key string) []byte {
+	h := hmac.New(sha1.New, []byte(key))
+	h.Write([]byte(secret))
+	return h.Sum(nil)
+}
+
+func url_path(url string) string {
+	// Ignore http://
+	url = strings.Replace(url, "http://", "", 1)
+	url = strings.Replace(url, "https://", "", 1)
+	// Path from first /
+	i := strings.Index(url, "/")
+	if i > 0 {
+		return url[i:]
+	}
+	return url
+}
+
+/* Perform a POST request on the given url, and send the data as JSON if given
+ * Add the APIKEY and APISECRET credentials, if given
+ */
+func (i *Instance) post(url string, data interface{}) ([]byte, error) {
+	return i.request("POST", url, data)
+}
+
+/* Perform a request on the given url, and send the data as JSON if given
+ * Add the APIKEY and APISECRET credentials, if given
+ */
+func (i *Instance) request(method string, url string, data interface{}) ([]byte, error) {
+	buf := make([]byte, 0)
+	if data != nil {
+		var err error
+		if buf, err = json.Marshal(data); err != nil {
+			return buf, err
+		}
+		fmt.Printf("%s\n", string(buf)) // TODO: Remove this
+	}
+
+	req, err := http.NewRequest(method, url, bytes.NewBuffer(buf))
+	if err != nil {
+		return make([]byte, 0), err
+	}
+	// Credentials are sent in the headers
+	// "X-API-Key" -> api key
+	// "X-API-Hash" -> sha1 hashed api secret
+	// POST request
+	if i.apikey != "" && i.apisecret != "" {
+		req.Header.Add("X-API-Key", i.apikey)
+		// The Hash gets salted with the timestamp
+		// See https://github.com/os-autoinst/openQA-python-client/blob/master/src/openqa_client/client.py#L115
+		// hmac_sha1_sum(/api/v1/machines1617024969, XXXXXXXXXXXXXXXXXX){
+		timestamp := time.Now().Unix()
+		req.Header.Add("X-API-Microtime", fmt.Sprintf("%d", timestamp))
+		path := url_path(url)
+		key := fmt.Sprintf("%s%d", path, timestamp)
+		hash := fmt.Sprintf("%x", hmac_sha1(key, i.apisecret))
+		req.Header.Add("X-API-Hash", hash)
+
+	}
+	// Perform request on a new http client
+	c := http.Client{}
+	r, err := c.Do(req)
+	if err != nil {
+		return make([]byte, 0), err
+	}
+
+	// First read body
+	defer r.Body.Close()
+	buf, err = ioutil.ReadAll(r.Body) // TODO: Limit read size
+	if err != nil {
+		return buf, err
+	}
+
+	// Check status code
+	if r.StatusCode != 200 {
+		if i.verbose {
+			fmt.Fprintf(os.Stderr, "%s\n", string(buf))
+		}
+		return buf, fmt.Errorf("http status code %d", r.StatusCode)
+	}
+	return buf, nil
 }
 
 /* Query the job overview. params is a map for optional parameters, which will be added to the query.
@@ -226,6 +363,33 @@ func fetchJobTemplates(url string) ([]JobTemplate, error) {
 	return make([]JobTemplate, 0), nil
 }
 
+func fetchMachines(url string) ([]Machine, error) {
+	r, err := http.Get(url)
+	if err != nil {
+		return make([]Machine, 0), err
+	}
+	if r.StatusCode != 200 {
+		return make([]Machine, 0), fmt.Errorf("http status code %d", r.StatusCode)
+	}
+
+	// machines come as a "Machines:[...]" dict
+	machines := make(map[string][]weirdMachine, 0)
+	err = json.NewDecoder(r.Body).Decode(&machines)
+	if machines, ok := machines["Machines"]; ok {
+		// Parse those weird machines to actual machine instances
+		ret := make([]Machine, 0)
+		for _, mach := range machines {
+			current := Machine{Name: mach.Name, Backend: mach.Backend, ID: mach.ID}
+			mach.CopySettingsTo(&current)
+			//buf, _ := json.Marshal(mach)
+			//fmt.Println(string(buf))  // TODO: Remove me
+			ret = append(ret, current)
+		}
+		return ret, err
+	}
+	return make([]Machine, 0), nil
+}
+
 func fetchJob(url string) (Job, error) {
 	// Expected result structure
 	type ResultJob struct {
@@ -286,4 +450,58 @@ func (j *Job) FetchAllChildren(follow bool) ([]Job, error) {
 func (i *Instance) GetJobTemplates() ([]JobTemplate, error) {
 	url := fmt.Sprintf("%s/api/v1/job_templates", i.URL)
 	return fetchJobTemplates(url)
+}
+
+func (i *Instance) GetMachines() ([]Machine, error) {
+	url := fmt.Sprintf("%s/api/v1/machines", i.URL)
+	return fetchMachines(url)
+}
+
+func (i *Instance) GetMachine(id int) (Machine, error) {
+	url := fmt.Sprintf("%s/api/v1/machines/%d", i.URL, id)
+	if machines, err := fetchMachines(url); err != nil {
+		return Machine{}, err
+	} else {
+		if len(machines) > 0 {
+			return machines[0], nil
+		} else {
+			return Machine{}, nil
+		}
+	}
+}
+
+func (i *Instance) PostMachine(machine Machine) (Machine, error) {
+	if i.apikey == "" || i.apisecret == "" {
+		return Machine{}, fmt.Errorf("API key or secret not set")
+	}
+
+	var rurl string
+	if machine.ID == 0 {
+		rurl = fmt.Sprintf("%s/api/v1/machines", i.URL)
+	} else {
+		rurl = fmt.Sprintf("%s/api/v1/machines/%d", i.URL, machine.ID)
+	}
+
+	// Add parameters
+	params := url.Values{}
+	params.Add("backend", machine.Backend)
+	params.Add("name", machine.Name)
+	for k, v := range machine.Settings {
+		params.Add("settings["+k+"]", v)
+	}
+	rurl += "?" + params.Encode()
+	fmt.Println(rurl)
+
+	// Setting are encoded in a bit weird way
+	// Note: This is not supported by openQA at the moment, but we keep it here for when it does.
+	wmach := weirdMachine{Name: machine.Name, ID: machine.ID, Backend: machine.Backend}
+	wmach.CopySettingsFrom(machine)
+
+	// Encode the machine settings as JSON
+	if buf, err := i.post(rurl, wmach); err != nil {
+		return Machine{}, err
+	} else {
+		err = json.Unmarshal(buf, &machine)
+		return machine, err
+	}
 }

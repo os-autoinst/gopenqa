@@ -25,12 +25,6 @@ type Job struct {
 	instance *Instance
 }
 
-type JobGroup struct {
-	ID       int    `json:"id"`
-	Name     string `json:"name"`
-	ParentID int    `json:"parent_id"`
-}
-
 /* Children struct is for chained, directly chained and parallel children/parents */
 type Children struct {
 	Chained         []int `json:"Chained"`
