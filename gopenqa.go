@@ -7,64 +7,6 @@ import (
 	"strings"
 )
 
-/* Job instance */
-type Job struct {
-	AssignedWorkerID int      `json:"assigned_worker_id"`
-	BlockedByID      int      `json:"blocked_by_id"`
-	Children         Children `json:"children"`
-	Parents          Children `json:"parents"`
-	CloneID          int      `json:"clone_id"`
-	GroupID          int      `json:"group_id"`
-	ID               int      `json:"id"`
-	// Modules
-	Name string `json:"name"`
-	// Parents
-	Priority  int      `json:"priority"`
-	Result    string   `json:"result"`
-	Settings  Settings `json:"settings"`
-	State     string   `json:"state"`
-	Tfinished string   `json:"t_finished"`
-	Tstarted  string   `json:"t_started"`
-	Test      string   `json:"test"`
-	/* this is added by the program and not part of the fetched json */
-	Link     string
-	Prefix   string
-	instance *Instance
-}
-
-type JobGroup struct {
-	ID       int    `json:"id"`
-	Name     string `json:"name"`
-	ParentID int    `json:"parent_id"`
-}
-
-/* Children struct is for chained, directly chained and parallel children/parents */
-type Children struct {
-	Chained         []int `json:"Chained"`
-	DirectlyChained []int `json:"Directly chained"`
-	Parallel        []int `json:"Parallel"`
-}
-
-/* Job Setting struct */
-type Settings struct {
-	Arch    string `json:"ARCH"`
-	Backend string `json:"BACKEND"`
-	Machine string `json:"MACHINE"`
-}
-
-/* Worker instance */
-type Worker struct {
-	Alive      int               `json:"alive"`
-	Connected  int               `json:"connected"`
-	Error      string            `json:"error"` // Error string if present
-	Host       string            `json:"host"`
-	ID         int               `json:"id"`
-	Instance   int               `json:"instance"`
-	Status     string            `json:"status"`
-	Websocket  int               `json:"websocket"`
-	Properties map[string]string `json:"properties"` // Worker properties as returned by openQA
-}
-
 /* Instance defines a openQA instance */
 type Instance struct {
 	URL           string
@@ -267,6 +209,23 @@ func fetchWorkers(url string) ([]Worker, error) {
 	return make([]Worker, 0), nil
 }
 
+func fetchJobTemplates(url string) ([]JobTemplate, error) {
+	r, err := http.Get(url)
+	if err != nil {
+		return make([]JobTemplate, 0), err
+	}
+	if r.StatusCode != 200 {
+		return make([]JobTemplate, 0), fmt.Errorf("http status code %d", r.StatusCode)
+	}
+	// the templates come as a "JobTemplates:[...]" dict
+	templates := make(map[string][]JobTemplate, 0)
+	err = json.NewDecoder(r.Body).Decode(&templates)
+	if templates, ok := templates["JobTemplates"]; ok {
+		return templates, err
+	}
+	return make([]JobTemplate, 0), nil
+}
+
 func fetchJob(url string) (Job, error) {
 	// Expected result structure
 	type ResultJob struct {
@@ -322,4 +281,9 @@ func (j *Job) FetchAllChildren(follow bool) ([]Job, error) {
 	children = append(children, j.Children.DirectlyChained...)
 	children = append(children, j.Children.Parallel...)
 	return j.FetchChildren(children, follow)
+}
+
+func (i *Instance) GetJobTemplates() ([]JobTemplate, error) {
+	url := fmt.Sprintf("%s/api/v1/job_templates", i.URL)
+	return fetchJobTemplates(url)
 }
