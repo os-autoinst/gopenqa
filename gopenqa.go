@@ -33,18 +33,31 @@ type weirdMachine struct {
 	Settings []map[string]string `json:"settings"`
 }
 
-func (mach *weirdMachine) CopySettingsFrom(src Machine) {
-	mach.Settings = make([]map[string]string, 0)
-	for k, v := range src.Settings {
+// same as weirdMachine
+type weirdProduct struct {
+	Arch     string              `json:"arch"`
+	Distri   string              `json:"distri"`
+	Flavor   string              `json:"flavor"`
+	Group    string              `json:"group"`
+	ID       int                 `json:"id"`
+	Version  string              `json:"version"`
+	Settings []map[string]string `json:"settings"`
+}
+
+func convertSettingsFrom(settings map[string]string) []map[string]string {
+	ret := make([]map[string]string, 0)
+	for k, v := range settings {
 		setting := make(map[string]string, 0)
 		setting["key"] = k
 		setting["value"] = v
-		mach.Settings = append(mach.Settings, setting)
+		ret = append(ret, setting)
 	}
+	return ret
 }
-func (mach *weirdMachine) CopySettingsTo(dst *Machine) {
-	dst.Settings = make(map[string]string)
-	for _, s := range mach.Settings {
+
+func convertSettingsTo(settings []map[string]string) map[string]string {
+	ret := make(map[string]string, 0)
+	for _, s := range settings {
 		k, ok := s["key"]
 		if !ok {
 			continue
@@ -53,8 +66,69 @@ func (mach *weirdMachine) CopySettingsTo(dst *Machine) {
 		if !ok {
 			continue
 		}
-		dst.Settings[k] = v
+		ret[k] = v
 	}
+	return ret
+}
+
+func (mach *weirdMachine) CopySettingsFrom(src Machine) {
+	mach.Settings = convertSettingsFrom(src.Settings)
+}
+func (mach *weirdMachine) CopySettingsTo(dst *Machine) {
+	dst.Settings = convertSettingsTo(mach.Settings)
+}
+
+func (p *weirdProduct) CopySettingsFrom(src Product) {
+	p.Settings = convertSettingsFrom(src.Settings)
+}
+func (p *weirdProduct) CopySettingsTo(dst *Product) {
+	dst.Settings = convertSettingsTo(p.Settings)
+}
+
+func (w *weirdProduct) toProduct() Product {
+	p := Product{}
+	p.Arch = w.Arch
+	p.Distri = w.Distri
+	p.Flavor = w.Flavor
+	p.Group = w.Group
+	p.ID = w.ID
+	p.Version = w.Version
+	w.CopySettingsTo(&p)
+	return p
+}
+
+func createWeirdProduct(p Product) weirdProduct {
+	w := weirdProduct{}
+	w.Arch = p.Arch
+	w.Distri = p.Distri
+	w.Flavor = p.Flavor
+	w.Group = p.Group
+	w.ID = p.ID
+	w.Version = p.Version
+	w.CopySettingsFrom(p)
+	return w
+}
+
+/* Get www-form-urlencoded parameters of this Product */
+func (p *weirdProduct) EncodeParams() string {
+	params := url.Values{}
+	params.Add("arch", p.Arch)
+	params.Add("distri", p.Distri)
+	params.Add("flavor", p.Flavor)
+	params.Add("id", string(p.ID))
+	params.Add("version", p.Version)
+	for _, s := range p.Settings {
+		k, ok := s["key"]
+		if !ok {
+			continue
+		}
+		v, ok := s["value"]
+		if !ok {
+			continue
+		}
+		params.Add("settings["+k+"]", v)
+	}
+	return params.Encode()
 }
 
 /* Format job as a string */
@@ -334,6 +408,18 @@ func (i *Instance) GetJobGroups() ([]JobGroup, error) {
 	return fetchJobGroups(url)
 }
 
+func (i *Instance) GetJobGroup(id int) (JobGroup, error) {
+	url := fmt.Sprintf("%s/api/v1/job_groups/%d", i.URL, id)
+	groups, err := fetchJobGroups(url)
+	if err != nil {
+		return JobGroup{}, err
+	}
+	if len(groups) == 0 {
+		return JobGroup{}, fmt.Errorf("not found")
+	}
+	return groups[0], nil
+}
+
 func (i *Instance) GetWorkers() ([]Worker, error) {
 	url := fmt.Sprintf("%s/api/v1/workers", i.URL)
 	return fetchWorkers(url)
@@ -361,7 +447,13 @@ func fetchJobGroups(url string) ([]JobGroup, error) {
 	if r.StatusCode != 200 {
 		return jobs, fmt.Errorf("http status code %d", r.StatusCode)
 	}
-	err = json.NewDecoder(r.Body).Decode(&jobs)
+
+	data, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		return jobs, err
+	}
+	// Sometimes SizeLimit is returned as string but it should be an int. Fix this.
+	err = json.Unmarshal(data, &jobs)
 	return jobs, err
 }
 
@@ -626,12 +718,85 @@ func (i *Instance) DeleteMachine(id int) error {
 	}
 
 	rurl := fmt.Sprintf("%s/api/v1/machines/%d", i.URL, id)
-	if buf, err := i.delete(rurl, nil); err != nil {
+	buf, err := i.delete(rurl, nil)
+	if i.verbose {
+		fmt.Fprintf(os.Stderr, "%s\n", string(buf))
+	}
+	if err != nil {
 		return err
+	} else {
+		return nil
+	}
+}
+
+func (i *Instance) GetProducts() ([]Product, error) {
+	products := make([]Product, 0)
+	rurl := fmt.Sprintf("%s/api/v1/products", i.URL)
+	buf, err := i.get(rurl, nil)
+	if err != nil {
+		return products, err
+	}
+	var obj map[string][]weirdProduct
+	if err := json.Unmarshal(buf, &obj); err != nil {
+		return products, err
+	}
+	if fetched, ok := obj["Products"]; ok {
+		// Convert from weirdProduct to product
+		for _, product := range fetched {
+			products = append(products, product.toProduct())
+		}
+		return products, nil
+	}
+	if i.verbose {
+		fmt.Fprintf(os.Stderr, "%s\n", string(buf))
+	}
+	return products, fmt.Errorf("invalid response")
+}
+
+func (i *Instance) GetProduct(id int) (Product, error) {
+	rurl := fmt.Sprintf("%s/api/v1/products/%d", i.URL, id)
+	buf, err := i.get(rurl, nil)
+	if err != nil {
+		return Product{}, err
+	}
+	var obj map[string][]weirdProduct
+	if err := json.Unmarshal(buf, &obj); err != nil {
+		return Product{}, err
+	}
+	if products, ok := obj["Products"]; ok {
+		if len(products) == 0 {
+			return Product{}, fmt.Errorf("not found")
+		}
+		return products[0].toProduct(), nil
 	} else {
 		if i.verbose {
 			fmt.Fprintf(os.Stderr, "%s\n", string(buf))
 		}
-		return nil
+		return Product{}, fmt.Errorf("invalid response")
 	}
+}
+
+func (i *Instance) PostProduct(product Product) (Product, error) {
+	rurl := ""
+	if product.ID == 0 {
+		rurl = fmt.Sprintf("%s/api/v1/products", i.URL)
+	} else {
+		rurl = fmt.Sprintf("%s/api/v1/products/%d", i.URL, product.ID)
+	}
+
+	// Product to values
+	wproduct := createWeirdProduct(product)
+	data := []byte(wproduct.EncodeParams())
+	if i.verbose {
+		fmt.Fprintf(os.Stderr, "%s\n", data)
+	}
+	buf, err := i.post(rurl, data)
+	if i.verbose {
+		fmt.Fprintf(os.Stderr, "%s\n", string(buf))
+	}
+	if err != nil {
+		return Product{}, err
+	}
+	err = json.Unmarshal(buf, &product)
+	return product, err
 }
