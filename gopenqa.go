@@ -124,30 +124,57 @@ func url_path(url string) string {
 	return url
 }
 
+/* Perform a GET request on the given url, and send the data as JSON if given
+ * Add the APIKEY and APISECRET credentials, if given
+ */
+func (i *Instance) get(url string, data []byte) ([]byte, error) {
+	return i.request("GET", url, data)
+}
+
 /* Perform a POST request on the given url, and send the data as JSON if given
  * Add the APIKEY and APISECRET credentials, if given
  */
-func (i *Instance) post(url string, data interface{}) ([]byte, error) {
+func (i *Instance) post(url string, data []byte) ([]byte, error) {
 	return i.request("POST", url, data)
+}
+
+/* Perform a DELETE request on the given url, and send the data as JSON if given
+ * Add the APIKEY and APISECRET credentials, if given
+ */
+func (i *Instance) delete(url string, data []byte) ([]byte, error) {
+	return i.request("DELETE", url, data)
+}
+
+/* Perform a PUT request on the given url, and send the data as JSON if given
+ * Add the APIKEY and APISECRET credentials, if given
+ */
+func (i *Instance) put(url string, data []byte) ([]byte, error) {
+	return i.request("PUT", url, data)
 }
 
 /* Perform a request on the given url, and send the data as JSON if given
  * Add the APIKEY and APISECRET credentials, if given
  */
-func (i *Instance) request(method string, url string, data interface{}) ([]byte, error) {
-	buf := make([]byte, 0)
-	if data != nil {
+func (i *Instance) request(method string, url string, data []byte) ([]byte, error) {
+	contentType := ""
+	if data == nil {
+		data = make([]byte, 0)
+	} else if len(data) > 0 {
+		/* Don't do json, but pass it as url encoded form data!
 		var err error
 		if buf, err = json.Marshal(data); err != nil {
 			return buf, err
 		}
-		fmt.Printf("%s\n", string(buf)) // TODO: Remove this
+		*/
+		// TODO: Marshall data to URL encoded form data
+		contentType = "application/x-www-form-urlencoded"
 	}
 
-	req, err := http.NewRequest(method, url, bytes.NewBuffer(buf))
+	req, err := http.NewRequest(method, url, bytes.NewBuffer(data))
 	if err != nil {
 		return make([]byte, 0), err
 	}
+	req.Header.Add("Content-Type", contentType)
 	// Credentials are sent in the headers
 	// "X-API-Key" -> api key
 	// "X-API-Hash" -> sha1 hashed api secret
@@ -174,7 +201,7 @@ func (i *Instance) request(method string, url string, data interface{}) ([]byte,
 
 	// First read body
 	defer r.Body.Close()
-	buf, err = ioutil.ReadAll(r.Body) // TODO: Limit read size
+	buf, err := ioutil.ReadAll(r.Body) // TODO: Limit read size
 	if err != nil {
 		return buf, err
 	}
@@ -272,6 +299,15 @@ func (i *Instance) GetJob(id int) (Job, error) {
 	job.Link = fmt.Sprintf("%s/tests/%d", i.URL, id)
 	job.instance = i
 	return job, err
+}
+
+func (i *Instance) DeleteJob(id int) error {
+	url := fmt.Sprintf("%s/api/v1/jobs/%d", i.URL, id)
+	buf, err := i.delete(url, nil)
+	if i.verbose {
+		fmt.Fprintf(os.Stderr, "%s\n", buf)
+	}
+	return err
 }
 
 // GetJob fetches detailled job information and follows the job, if it contains a CloneID
@@ -452,6 +488,81 @@ func (i *Instance) GetJobTemplates() ([]JobTemplate, error) {
 	return fetchJobTemplates(url)
 }
 
+func (instance *Instance) GetJobGroupJobs(id int) ([]int, error) {
+	ids := make([]int, 0)
+	url := fmt.Sprintf("%s/api/v1/job_groups/%d/jobs", instance.URL, id)
+	buf, err := instance.get(url, nil)
+	if err != nil {
+		return ids, err
+	}
+	if instance.verbose {
+		fmt.Fprintf(os.Stderr, "%s\n", buf)
+	}
+	var obj map[string][]int // Result: {"ids":[5095,5096,5097,5101,5102]}
+	if err = json.Unmarshal(buf, &obj); err != nil {
+		return ids, err
+	}
+	if ids, ok := obj["ids"]; ok {
+		return ids, nil
+	} else {
+		return ids, fmt.Errorf("invalid response")
+	}
+}
+
+func (i *Instance) DeleteJobGroupJobs(id int) error {
+	if jobs, err := i.GetJobGroupJobs(id); err != nil {
+		return err
+	} else {
+		for _, id := range jobs {
+			if err := i.DeleteJob(id); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (i *Instance) DeleteJobGroup(id int) error {
+	url := fmt.Sprintf("%s/api/v1/job_groups/%d", i.URL, id)
+	buf, err := i.delete(url, nil)
+	if i.verbose {
+		fmt.Fprintf(os.Stderr, "%s\n", string(buf))
+	}
+	return err
+}
+func (i *Instance) DeleteJobTemplate(id int) error {
+	url := fmt.Sprintf("%s/api/v1/job_templates/%d", i.URL, id)
+	buf, err := i.delete(url, nil)
+	if i.verbose {
+		fmt.Fprintf(os.Stderr, "%s\n", string(buf))
+	}
+	return err
+}
+
+func (i *Instance) GetJobTemplate(id int) (JobTemplate, error) {
+	url := fmt.Sprintf("%s/api/v1/job_templates/%d", i.URL, id)
+	templates, err := fetchJobTemplates(url)
+	if err != nil {
+		return JobTemplate{}, err
+	}
+	if len(templates) == 0 {
+		return JobTemplate{}, fmt.Errorf("not found")
+	} else {
+		return templates[0], nil
+	}
+}
+
+func (i *Instance) GetJobTemplateYAML(id int) (string, error) {
+	url := fmt.Sprintf("%s/api/v1/job_templates_scheduling/%d", i.URL, id)
+	buf, err := i.get(url, nil)
+	return string(buf), err
+}
+func (i *Instance) PostJobTemplateYAML(id int, yaml string) error {
+	url := fmt.Sprintf("%s/api/v1/job_templates_scheduling/%d", i.URL, id)
+	_, err := i.post(url, []byte(yaml))
+	return err
+}
+
 func (i *Instance) GetMachines() ([]Machine, error) {
 	url := fmt.Sprintf("%s/api/v1/machines", i.URL)
 	return fetchMachines(url)
@@ -490,7 +601,6 @@ func (i *Instance) PostMachine(machine Machine) (Machine, error) {
 		params.Add("settings["+k+"]", v)
 	}
 	rurl += "?" + params.Encode()
-	fmt.Println(rurl)
 
 	// Setting are encoded in a bit weird way
 	// Note: This is not supported by openQA at the moment, but we keep it here for when it does.
@@ -498,10 +608,30 @@ func (i *Instance) PostMachine(machine Machine) (Machine, error) {
 	wmach.CopySettingsFrom(machine)
 
 	// Encode the machine settings as JSON
-	if buf, err := i.post(rurl, wmach); err != nil {
+	buf, err := json.Marshal(wmach)
+	if err != nil {
+		return Machine{}, err
+	}
+	if buf, err := i.post(rurl, buf); err != nil {
 		return Machine{}, err
 	} else {
 		err = json.Unmarshal(buf, &machine)
 		return machine, err
+	}
+}
+
+func (i *Instance) DeleteMachine(id int) error {
+	if i.apikey == "" || i.apisecret == "" {
+		return fmt.Errorf("API key or secret not set")
+	}
+
+	rurl := fmt.Sprintf("%s/api/v1/machines/%d", i.URL, id)
+	if buf, err := i.delete(rurl, nil); err != nil {
+		return err
+	} else {
+		if i.verbose {
+			fmt.Fprintf(os.Stderr, "%s\n", string(buf))
+		}
+		return nil
 	}
 }
