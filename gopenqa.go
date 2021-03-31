@@ -110,7 +110,7 @@ func createWeirdProduct(p Product) weirdProduct {
 }
 
 /* Get www-form-urlencoded parameters of this Product */
-func (p *weirdProduct) EncodeParams() string {
+func (p *weirdProduct) encodeParams() string {
 	params := url.Values{}
 	params.Add("arch", p.Arch)
 	params.Add("distri", p.Distri)
@@ -418,6 +418,49 @@ func (i *Instance) GetJobGroup(id int) (JobGroup, error) {
 		return JobGroup{}, fmt.Errorf("not found")
 	}
 	return groups[0], nil
+}
+
+func (i *Instance) PostJobGroup(jobgroup JobGroup) (JobGroup, error) {
+	rurl := fmt.Sprintf("%s/api/v1/job_groups", i.URL)
+	//if jobgroup.ID > 0 {
+	//	rurl = fmt.Sprintf("%s/api/v1/job_groups/%d", i.URL, jobgroup.ID)
+	//}
+	buf, err := i.post(rurl, []byte(jobgroup.encodeWWW()))
+	if err != nil {
+		return jobgroup, err
+	}
+	err = json.Unmarshal(buf, &jobgroup)
+	return jobgroup, err
+}
+
+func (i *Instance) GetParentJobGroups() ([]JobGroup, error) {
+	url := fmt.Sprintf("%s/api/v1/parent_groups", i.URL)
+	return fetchJobGroups(url)
+}
+
+func (i *Instance) GetParentJobGroup(id int) (JobGroup, error) {
+	url := fmt.Sprintf("%s/api/v1/parent_groups/%d", i.URL, id)
+	groups, err := fetchJobGroups(url)
+	if err != nil {
+		return JobGroup{}, err
+	}
+	if len(groups) == 0 {
+		return JobGroup{}, fmt.Errorf("not found")
+	}
+	return groups[0], nil
+}
+
+func (i *Instance) PostParentJobGroup(jobgroup JobGroup) (JobGroup, error) {
+	rurl := fmt.Sprintf("%s/api/v1/parent_groups", i.URL)
+	//if jobgroup.ID > 0 {
+	//	rurl = fmt.Sprintf("%s/api/v1/parent_groups/%d", i.URL, jobgroup.ID)
+	//}
+	buf, err := i.post(rurl, []byte(jobgroup.encodeWWW()))
+	if err != nil {
+		return jobgroup, err
+	}
+	err = json.Unmarshal(buf, &jobgroup)
+	return jobgroup, err
 }
 
 func (i *Instance) GetWorkers() ([]Worker, error) {
@@ -786,7 +829,7 @@ func (i *Instance) PostProduct(product Product) (Product, error) {
 
 	// Product to values
 	wproduct := createWeirdProduct(product)
-	data := []byte(wproduct.EncodeParams())
+	data := []byte(wproduct.encodeParams())
 	if i.verbose {
 		fmt.Fprintf(os.Stderr, "%s\n", data)
 	}
