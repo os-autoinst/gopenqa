@@ -10,9 +10,13 @@ import (
 	"net/http"
 	"os"
 	"testing"
+
+	"gotest.tools/assert"
 )
 
 var instance Instance
+
+const COMMENT_TEST_JOB_ID = 5830
 
 /* Test server http - Serves directories in test/ */
 func setupTestServer() {
@@ -73,4 +77,32 @@ func TestWorkers(t *testing.T) {
 		log.Fatalf("Expected 2 workers, got %d", len(workers))
 		return
 	}
+}
+
+func TestComments(t *testing.T) {
+	comments, err := instance.GetComments(COMMENT_TEST_JOB_ID)
+	if err != nil {
+		log.Fatalf("%s", err)
+		return
+	}
+	if len(comments) != 4 {
+		log.Fatalf("Expected 4 comments, got %d", len(comments))
+		return
+	}
+	// Check comments for expected content
+	for _, comment := range comments {
+		assert.Equal(t, comment.User, "phoenix")
+	}
+	assert.Equal(t, comments[0].ID, 14)
+	assert.Equal(t, comments[1].ID, 15)
+	assert.Equal(t, comments[2].ID, 16)
+	assert.Equal(t, comments[3].ID, 17)
+	assert.Equal(t, comments[1].Text, "Comment 2.")
+	assert.Equal(t, comments[2].Text, "poo#42")
+	assert.Equal(t, comments[3].Text, "bsc#1337")
+	assert.Assert(t, len(comments[2].BugRefs) == 1)
+	assert.Assert(t, len(comments[3].BugRefs) == 1)
+	assert.Assert(t, comments[2].BugRefs[0] == "poo#42")
+	assert.Assert(t, comments[3].BugRefs[0] == "bsc#1337")
+
 }
