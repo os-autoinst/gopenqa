@@ -18,9 +18,11 @@ type JobGroup struct {
 	KeepImportantResultsInDays int    `json:"keep_important_results_in_days"`
 	KeepLogsInDays             int    `json:"keep_logs_in_days"`
 	KeepResultsInDays          int    `json:"keep_results_in_days"`
-	SizeLimit                  int    `json:"size_limit_gb"` // Size limit in GB
-	SortOrder                  int    `json:"sort_order"`
-	Template                   string `json:"template"`
+	// Disabled because of type mismatch in json
+	// Sometimes it's returned as int, sometimes as string and we cannot deal with that atm
+	//SizeLimit                  int    `json:"size_limit_gb"` // Size limit in GB
+	SortOrder int    `json:"sort_order"`
+	Template  string `json:"template"`
 }
 
 func addIntIfNotZero(value int, name string, values *url.Values) {
@@ -46,7 +48,7 @@ func (j *JobGroup) encodeWWW() string {
 	addIntIfNotZero(j.KeepImportantResultsInDays, "keep_important_results_in_days", &params)
 	addIntIfNotZero(j.KeepLogsInDays, "keep_logs_in_days", &params)
 	addIntIfNotZero(j.KeepResultsInDays, "keep_results_in_days", &params)
-	addIntIfNotZero(j.SizeLimit, "size_limit_gb", &params)
+	//addIntIfNotZero(j.SizeLimit, "size_limit_gb", &params)
 	addIntIfNotZero(j.SortOrder, "sort_order", &params)
 	params.Add("template", j.Template)
 
