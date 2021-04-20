@@ -832,3 +832,18 @@ func (i *Instance) PostProduct(product Product) (Product, error) {
 	err = json.Unmarshal(buf, &product)
 	return product, err
 }
+
+/* Fetch comments for a given job */
+func (i *Instance) GetComments(job int) ([]Comment, error) {
+	ret := make([]Comment, 0)
+	rurl := fmt.Sprintf("%s/api/v1/jobs/%d/comments", i.URL, job)
+	buf, err := i.get(rurl, nil)
+	if i.verbose {
+		fmt.Fprintf(os.Stderr, "%s\n", string(buf))
+	}
+	if err != nil {
+		return ret, err
+	}
+	err = json.Unmarshal(buf, &ret)
+	return ret, err
+}
