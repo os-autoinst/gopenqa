@@ -33,7 +33,7 @@ type weirdMachine struct {
 	Settings []map[string]string `json:"settings"`
 }
 
-// same as weirdMachine
+// same as weirdMachine for Product
 type weirdProduct struct {
 	Arch     string              `json:"arch"`
 	Distri   string              `json:"distri"`
@@ -115,7 +115,7 @@ func (p *weirdProduct) encodeParams() string {
 	params.Add("arch", p.Arch)
 	params.Add("distri", p.Distri)
 	params.Add("flavor", p.Flavor)
-	params.Add("id", string(p.ID))
+	params.Add("id", fmt.Sprint(p.ID))
 	params.Add("version", p.Version)
 	for _, s := range p.Settings {
 		k, ok := s["key"]
@@ -129,17 +129,6 @@ func (p *weirdProduct) encodeParams() string {
 		params.Add("settings["+k+"]", v)
 	}
 	return params.Encode()
-}
-
-/* Format job as a string */
-func (j *Job) String() string {
-	return fmt.Sprintf("%d %s (%s)", j.ID, j.Name, j.Test)
-}
-func (j *Job) JobState() string {
-	if j.State == "done" {
-		return j.Result
-	}
-	return j.State
 }
 
 func EmptyParams() map[string]string {

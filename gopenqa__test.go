@@ -14,6 +14,7 @@ import (
 
 var instance Instance
 
+/* Test server http - Serves directories in test/ */
 func setupTestServer() {
 	fs := http.FileServer(http.Dir("./test"))
 	http.Handle("/api/v1/", http.StripPrefix("/api/v1/", fs))
@@ -41,10 +42,23 @@ func TestOverview(t *testing.T) {
 		log.Fatalf("%s", err)
 		return
 	}
-	// Expect 5 jobs
+	// Expect 6 jobs
 	if len(jobs) != 6 {
 		log.Fatalf("Expected 6 jobs, got %d", len(jobs))
 		return
+	}
+	// Check if each job is the same when fetched individually
+	for _, job := range jobs {
+		fetched, err := instance.GetJob(job.ID)
+		if err != nil {
+			log.Fatalf("Error fetching job %d: %s", job.ID, err)
+			return
+		}
+		// Overview has only ID and name
+		if job.ID != fetched.ID || job.Name != fetched.Name {
+			log.Fatalf("Fetching job %d doesn't match the overview job", job.ID)
+			return
+		}
 	}
 }
 
