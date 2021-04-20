@@ -1,0 +1,5 @@
+{"Products":[
+{"id":1,"arch":"x86_64","distri":"opensuse","flavor":"DVD","settings":[{"key":"QEMURAM","value":"2048"},{"key":"HDD_1","value":"openSUSE-1-DVD.iso"}]},
+{"id":2,"arch":"x86_64","distri":"opensuse","flavor":"Image","settings":[{"key":"STAGING","value":"1"}]},
+{"id":3,"arch":"aarch64","distri":"opensuse","flavor":"DVD","settings":[{"key":"BOOT_HDD_IMAGE","value":"1"},{"key":"HDD_1","value":"openSUSE-1-aarch64-DVD.iso"}]}
+]}

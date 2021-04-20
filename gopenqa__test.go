@@ -129,5 +129,33 @@ func TestMachines(t *testing.T) {
 	assert.Equal(t, machines[2].Backend, "qemu")
 	assert.Equal(t, machines[2].Name, "worker4")
 	assert.Equal(t, machines[2].Settings["HDDSIZEGB"], "10")
+}
 
+func TestProduct(t *testing.T) {
+	products, err := instance.GetProducts()
+	if err != nil {
+		log.Fatalf("%s", err)
+		return
+	}
+	if len(products) != 3 {
+		log.Fatalf("Expected 3 products, got %d", len(products))
+		return
+	}
+	assert.Equal(t, products[0].ID, 1)
+	assert.Equal(t, products[0].Arch, "x86_64")
+	assert.Equal(t, products[0].Distri, "opensuse")
+	assert.Equal(t, products[0].Flavor, "DVD")
+	assert.Equal(t, products[0].Settings["QEMURAM"], "2048")
+	assert.Equal(t, products[0].Settings["HDD_1"], "openSUSE-1-DVD.iso")
+	assert.Equal(t, products[1].ID, 2)
+	assert.Equal(t, products[1].Arch, "x86_64")
+	assert.Equal(t, products[1].Distri, "opensuse")
+	assert.Equal(t, products[1].Flavor, "Image")
+	assert.Equal(t, products[1].Settings["STAGING"], "1")
+	assert.Equal(t, products[2].ID, 3)
+	assert.Equal(t, products[2].Arch, "aarch64")
+	assert.Equal(t, products[2].Distri, "opensuse")
+	assert.Equal(t, products[2].Flavor, "DVD")
+	assert.Equal(t, products[2].Settings["BOOT_HDD_IMAGE"], "1")
+	assert.Equal(t, products[2].Settings["HDD_1"], "openSUSE-1-aarch64-DVD.iso")
 }
