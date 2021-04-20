@@ -541,8 +541,6 @@ func fetchMachines(url string) ([]Machine, error) {
 		for _, mach := range machines {
 			current := Machine{Name: mach.Name, Backend: mach.Backend, ID: mach.ID}
 			mach.CopySettingsTo(&current)
-			//buf, _ := json.Marshal(mach)
-			//fmt.Println(string(buf))  // TODO: Remove me
 			ret = append(ret, current)
 		}
 		return ret, err

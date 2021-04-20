@@ -1,0 +1,5 @@
+{"Machines":[
+{"backend":"qemu","id":1,"name":"worker1","settings":[{"key":"HDDSIZEGB","value":"20"},{"key":"QEMUVGA","value":"cirrus"}]},
+{"backend":"qemu","id":2,"name":"worker2","settings":[{"key":"HDDSIZEGB","value":"30"},{"key":"QEMUVGA","value":"cirrus"}]},
+{"backend":"qemu","id":4,"name":"worker4","settings":[{"key":"HDDSIZEGB","value":"10"},{"key":"QEMUVGA","value":"cirrus"}]}
+]}

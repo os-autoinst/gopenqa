@@ -106,3 +106,28 @@ func TestComments(t *testing.T) {
 	assert.Assert(t, comments[3].BugRefs[0] == "bsc#1337")
 
 }
+
+func TestMachines(t *testing.T) {
+	machines, err := instance.GetMachines()
+	if err != nil {
+		log.Fatalf("%s", err)
+		return
+	}
+	if len(machines) != 3 {
+		log.Fatalf("Expected 3 machines, got %d", len(machines))
+		return
+	}
+	assert.Equal(t, machines[0].ID, 1)
+	assert.Equal(t, machines[0].Backend, "qemu")
+	assert.Equal(t, machines[0].Name, "worker1")
+	assert.Equal(t, machines[0].Settings["HDDSIZEGB"], "20")
+	assert.Equal(t, machines[1].ID, 2)
+	assert.Equal(t, machines[1].Backend, "qemu")
+	assert.Equal(t, machines[1].Name, "worker2")
+	assert.Equal(t, machines[1].Settings["HDDSIZEGB"], "30")
+	assert.Equal(t, machines[2].ID, 4)
+	assert.Equal(t, machines[2].Backend, "qemu")
+	assert.Equal(t, machines[2].Name, "worker4")
+	assert.Equal(t, machines[2].Settings["HDDSIZEGB"], "10")
+
+}
