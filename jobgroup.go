@@ -7,19 +7,19 @@ import (
 
 /* Job Group */
 type JobGroup struct {
-	ID                         int    `json:"id"`
-	Name                       string `json:"name"`
-	ParentID                   int    `json:"parent_id"`
-	Description                string `json:"description"`
-	BuildVersionSort           int    `json:"build_version_sort"`
-	CarryOverBugrefs           int    `json:"carry_over_bugrefs"`
-	DefaultPriority            int    `json:"default_priority`
-	KeepImportantLogsInDays    int    `json:"keep_important_logs_in_days"`
-	KeepImportantResultsInDays int    `json:"keep_important_results_in_days"`
-	KeepLogsInDays             int    `json:"keep_logs_in_days"`
-	KeepResultsInDays          int    `json:"keep_results_in_days"`
+	ID               int    `json:"id"`
+	Name             string `json:"name"`
+	ParentID         int    `json:"parent_id"`
+	Description      string `json:"description"`
+	BuildVersionSort int    `json:"build_version_sort"`
+	CarryOverBugrefs int    `json:"carry_over_bugrefs"`
+	DefaultPriority  int    `json:"default_priority`
 	// Disabled because of type mismatch in json
 	// Sometimes it's returned as int, sometimes as string and we cannot deal with that atm
+	//KeepImportantLogsInDays    int    `json:"keep_important_logs_in_days"`
+	//KeepImportantResultsInDays int    `json:"keep_important_results_in_days"`
+	//KeepLogsInDays             int    `json:"keep_logs_in_days"`
+	//KeepResultsInDays          int    `json:"keep_results_in_days"`
 	//SizeLimit                  int    `json:"size_limit_gb"` // Size limit in GB
 	SortOrder int    `json:"sort_order"`
 	Template  string `json:"template"`
@@ -44,10 +44,10 @@ func (j *JobGroup) encodeWWW() string {
 	addIntIfNotZero(j.BuildVersionSort, "build_version_sort", &params)
 	addIntIfNotZero(j.CarryOverBugrefs, "carry_over_bugrefs", &params)
 	addIntIfNotZero(j.DefaultPriority, "default_priority", &params)
-	addIntIfNotZero(j.KeepImportantLogsInDays, "keep_important_logs_in_days", &params)
-	addIntIfNotZero(j.KeepImportantResultsInDays, "keep_important_results_in_days", &params)
-	addIntIfNotZero(j.KeepLogsInDays, "keep_logs_in_days", &params)
-	addIntIfNotZero(j.KeepResultsInDays, "keep_results_in_days", &params)
+	//addIntIfNotZero(j.KeepImportantLogsInDays, "keep_important_logs_in_days", &params)
+	//addIntIfNotZero(j.KeepImportantResultsInDays, "keep_important_results_in_days", &params)
+	//addIntIfNotZero(j.KeepLogsInDays, "keep_logs_in_days", &params)
+	//addIntIfNotZero(j.KeepResultsInDays, "keep_results_in_days", &params)
 	//addIntIfNotZero(j.SizeLimit, "size_limit_gb", &params)
 	addIntIfNotZero(j.SortOrder, "sort_order", &params)
 	params.Add("template", j.Template)
