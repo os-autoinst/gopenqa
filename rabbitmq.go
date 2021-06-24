@@ -11,18 +11,27 @@ import (
 
 // JobStatus is the returns struct for job status updates from RabbitMQ
 type JobStatus struct {
-	Arch string `json:"ARCH"`
-	Build string `json:"BUILD"`
-	Flavor string `json:"FLAVOR"`
-	Machine string `json:"MACHINE"`
-	Test string  `json:"TEST"`
-	BugRef string `json:"bugref"`
-	GroupID int `json:"group_id"`
-	ID int `json:"id"`
-	NewBuild string `json:"newbuild"`
-	Reason string `json:"reason"`
-	Remaining int `json:"remaining"`
-	Result string `json:"result"`
+	Arch      string `json:"ARCH"`
+	Build     string `json:"BUILD"`
+	Flavor    string `json:"FLAVOR"`
+	Machine   string `json:"MACHINE"`
+	Test      string `json:"TEST"`
+	BugRef    string `json:"bugref"`
+	GroupID   int    `json:"group_id"`
+	ID        int    `json:"id"`
+	NewBuild  string `json:"newbuild"`
+	Reason    string `json:"reason"`
+	Remaining int    `json:"remaining"`
+	Result    string `json:"result"`
+}
+
+// RabbitMQ comment
+type CommentMQ struct {
+	ID      int    `json:"id"`
+	Created string `json:"created"`
+	Updates string `json:"updated"`
+	Text    string `json:"text"`
+	User    string `json:"user"`
 }
 
 // RabbitMQ struct is the object which handles the connection to a RabbitMQ instance
@@ -81,6 +90,21 @@ func (sub *RabbitMQSubscription) ReceiveJobStatus() (JobStatus, error) {
 		return status, err
 	}
 	return status, err
+}
+
+// ReceiveJobStatus receives the next message and try to parse it as Comment. Use this for job status updates
+func (sub *RabbitMQSubscription) ReceiveComment() (CommentMQ, error) {
+	var comment CommentMQ
+	d, err := sub.Receive()
+	if err != nil {
+		return comment, err
+	}
+	// Try to unmarshall to json
+	err = json.Unmarshal(d.Body, &comment)
+	if err != nil {
+		return comment, err
+	}
+	return comment, err
 }
 
 // Close subscription channel
