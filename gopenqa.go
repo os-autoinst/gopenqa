@@ -20,21 +20,22 @@ type Instance struct {
 	apikey        string
 	apisecret     string
 	verbose       bool
-	maxRecursions int // Maximum number of recursions
+	maxRecursions int    // Maximum number of recursions
+	userAgent     string // Useragent sent with the request
 }
 
-// the settings are given as a bit of a weird dict:
+// the settings are given as dict:
 // e.g. "settings":[{"key":"WORKER_CLASS","value":"\"plebs\""}]}]
 // We create an internal struct to account for that
-type weirdMachine struct {
+type machine2 struct {
 	ID       int                 `json:"id"`
 	Backend  string              `json:"backend"`
 	Name     string              `json:"name"`
 	Settings []map[string]string `json:"settings"`
 }
 
-// same as weirdMachine for Product
-type weirdProduct struct {
+// same as machine2 for Product
+type product2 struct {
 	Arch     string              `json:"arch"`
 	Distri   string              `json:"distri"`
 	Flavor   string              `json:"flavor"`
@@ -71,21 +72,21 @@ func convertSettingsTo(settings []map[string]string) map[string]string {
 	return ret
 }
 
-func (mach *weirdMachine) CopySettingsFrom(src Machine) {
+func (mach *machine2) CopySettingsFrom(src Machine) {
 	mach.Settings = convertSettingsFrom(src.Settings)
 }
-func (mach *weirdMachine) CopySettingsTo(dst *Machine) {
+func (mach *machine2) CopySettingsTo(dst *Machine) {
 	dst.Settings = convertSettingsTo(mach.Settings)
 }
 
-func (p *weirdProduct) CopySettingsFrom(src Product) {
+func (p *product2) CopySettingsFrom(src Product) {
 	p.Settings = convertSettingsFrom(src.Settings)
 }
-func (p *weirdProduct) CopySettingsTo(dst *Product) {
+func (p *product2) CopySettingsTo(dst *Product) {
 	dst.Settings = convertSettingsTo(p.Settings)
 }
 
-func (w *weirdProduct) toProduct() Product {
+func (w *product2) toProduct() Product {
 	p := Product{}
 	p.Arch = w.Arch
 	p.Distri = w.Distri
@@ -97,8 +98,8 @@ func (w *weirdProduct) toProduct() Product {
 	return p
 }
 
-func createWeirdProduct(p Product) weirdProduct {
-	w := weirdProduct{}
+func createProduct2(p Product) product2 {
+	w := product2{}
 	w.Arch = p.Arch
 	w.Distri = p.Distri
 	w.Flavor = p.Flavor
@@ -110,7 +111,7 @@ func createWeirdProduct(p Product) weirdProduct {
 }
 
 /* Get www-form-urlencoded parameters of this Product */
-func (p *weirdProduct) encodeParams() string {
+func (p *product2) encodeParams() string {
 	params := url.Values{}
 	params.Add("arch", p.Arch)
 	params.Add("distri", p.Distri)
@@ -137,7 +138,7 @@ func EmptyParams() map[string]string {
 
 /* Create a openQA instance module */
 func CreateInstance(url string) Instance {
-	inst := Instance{URL: url, maxRecursions: 10, verbose: false}
+	inst := Instance{URL: url, maxRecursions: 10, verbose: false, userAgent: "gopenqa"}
 	return inst
 }
 
@@ -157,8 +158,14 @@ func (i *Instance) SetApiKey(key string, secret string) {
 	i.apisecret = secret
 }
 
+// Enable verbosity
 func (i *Instance) SetVerbose(verbose bool) {
 	i.verbose = verbose
+}
+
+// Set the UserAgent for HTTP requests
+func (i *Instance) SetUserAgent(userAgent string) {
+	i.userAgent = userAgent
 }
 
 func assignInstance(jobs []Job, instance *Instance) []Job {
@@ -238,6 +245,9 @@ func (i *Instance) request(method string, url string, data []byte) ([]byte, erro
 		return make([]byte, 0), err
 	}
 	req.Header.Add("Content-Type", contentType)
+	if i.userAgent != "" {
+		req.Header.Set("User-Agent", i.userAgent)
+	}
 	// Credentials are sent in the headers
 	// "X-API-Key" -> api key
 	// "X-API-Hash" -> sha1 hashed api secret
@@ -533,7 +543,7 @@ func fetchMachines(url string) ([]Machine, error) {
 	}
 
 	// machines come as a "Machines:[...]" dict
-	machines := make(map[string][]weirdMachine, 0)
+	machines := make(map[string][]machine2, 0)
 	err = json.NewDecoder(r.Body).Decode(&machines)
 	if machines, ok := machines["Machines"]; ok {
 		// Parse those weird machines to actual machine instances
@@ -726,7 +736,7 @@ func (i *Instance) PostMachine(machine Machine) (Machine, error) {
 
 	// Setting are encoded in a bit weird way
 	// Note: This is not supported by openQA at the moment, but we keep it here for when it does.
-	wmach := weirdMachine{Name: machine.Name, ID: machine.ID, Backend: machine.Backend}
+	wmach := machine2{Name: machine.Name, ID: machine.ID, Backend: machine.Backend}
 	wmach.CopySettingsFrom(machine)
 
 	// Encode the machine settings as JSON
@@ -766,12 +776,12 @@ func (i *Instance) GetProducts() ([]Product, error) {
 	if err != nil {
 		return products, err
 	}
-	var obj map[string][]weirdProduct
+	var obj map[string][]product2
 	if err := json.Unmarshal(buf, &obj); err != nil {
 		return products, err
 	}
 	if fetched, ok := obj["Products"]; ok {
-		// Convert from weirdProduct to product
+		// Convert from product2 to product
 		for _, product := range fetched {
 			products = append(products, product.toProduct())
 		}
@@ -789,7 +799,7 @@ func (i *Instance) GetProduct(id int) (Product, error) {
 	if err != nil {
 		return Product{}, err
 	}
-	var obj map[string][]weirdProduct
+	var obj map[string][]product2
 	if err := json.Unmarshal(buf, &obj); err != nil {
 		return Product{}, err
 	}
@@ -815,7 +825,7 @@ func (i *Instance) PostProduct(product Product) (Product, error) {
 	}
 
 	// Product to values
-	wproduct := createWeirdProduct(product)
+	wproduct := createProduct2(product)
 	data := []byte(wproduct.encodeParams())
 	if i.verbose {
 		fmt.Fprintf(os.Stderr, "%s\n", data)
