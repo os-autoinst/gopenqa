@@ -20,7 +20,8 @@ type Instance struct {
 	apikey        string
 	apisecret     string
 	verbose       bool
-	maxRecursions int // Maximum number of recursions
+	maxRecursions int    // Maximum number of recursions
+	userAgent     string // Useragent sent with the request
 }
 
 // the settings are given as dict:
@@ -137,7 +138,7 @@ func EmptyParams() map[string]string {
 
 /* Create a openQA instance module */
 func CreateInstance(url string) Instance {
-	inst := Instance{URL: url, maxRecursions: 10, verbose: false}
+	inst := Instance{URL: url, maxRecursions: 10, verbose: false, userAgent: "gopenqa"}
 	return inst
 }
 
@@ -157,8 +158,14 @@ func (i *Instance) SetApiKey(key string, secret string) {
 	i.apisecret = secret
 }
 
+// Enable verbosity
 func (i *Instance) SetVerbose(verbose bool) {
 	i.verbose = verbose
+}
+
+// Set the UserAgent for HTTP requests
+func (i *Instance) SetUserAgent(userAgent string) {
+	i.userAgent = userAgent
 }
 
 func assignInstance(jobs []Job, instance *Instance) []Job {
@@ -238,6 +245,9 @@ func (i *Instance) request(method string, url string, data []byte) ([]byte, erro
 		return make([]byte, 0), err
 	}
 	req.Header.Add("Content-Type", contentType)
+	if i.userAgent != "" {
+		req.Header.Set("User-Agent", i.userAgent)
+	}
 	// Credentials are sent in the headers
 	// "X-API-Key" -> api key
 	// "X-API-Hash" -> sha1 hashed api secret
