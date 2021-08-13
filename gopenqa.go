@@ -309,7 +309,7 @@ func (i *Instance) GetOverview(testsuite string, params map[string]string) ([]Jo
 		url += "?" + mergeParams(params)
 	}
 
-	jobs, err := fetchJobs(url)
+	jobs, err := i.fetchJobs(url)
 	assignInstance(jobs, i)
 	return jobs, err
 }
@@ -332,14 +332,11 @@ func (i *Instance) GetLatestJobs(testsuite string, params map[string]string) ([]
 	}
 	url += "?" + mergeParams(params)
 	// Fetch jobs here, as we expect it to be in `jobs`
-	r, err := http.Get(url)
+	resp, err := i.request("GET", url, nil)
 	if err != nil {
 		return jobs.Jobs, err
 	}
-	if r.StatusCode != 200 {
-		return jobs.Jobs, fmt.Errorf("http status code %d", r.StatusCode)
-	}
-	err = json.NewDecoder(r.Body).Decode(&jobs)
+	err = json.Unmarshal(resp, &jobs)
 
 	// Now, get only the latest job per group_id
 	mapped := make(map[int]Job)
@@ -368,7 +365,7 @@ func (i *Instance) GetLatestJobs(testsuite string, params map[string]string) ([]
 // GetJob fetches detailled job information
 func (i *Instance) GetJob(id int) (Job, error) {
 	url := fmt.Sprintf("%s/api/v1/jobs/%d", i.URL, id)
-	job, err := fetchJob(url)
+	job, err := i.fetchJob(url)
 	job.Link = fmt.Sprintf("%s/tests/%d", i.URL, id)
 	job.instance = i
 	return job, err
@@ -388,7 +385,7 @@ func (i *Instance) GetJobFollow(id int) (Job, error) {
 	recursions := 0 // keep track of the number of recursions
 fetch:
 	url := fmt.Sprintf("%s/api/v1/jobs/%d", i.URL, id)
-	job, err := fetchJob(url)
+	job, err := i.fetchJob(url)
 	if job.CloneID != 0 && job.CloneID != job.ID {
 		recursions++
 		if i.maxRecursions != 0 && recursions >= i.maxRecursions {
@@ -404,12 +401,12 @@ fetch:
 
 func (i *Instance) GetJobGroups() ([]JobGroup, error) {
 	url := fmt.Sprintf("%s/api/v1/job_groups", i.URL)
-	return fetchJobGroups(url)
+	return i.fetchJobGroups(url)
 }
 
 func (i *Instance) GetJobGroup(id int) (JobGroup, error) {
 	url := fmt.Sprintf("%s/api/v1/job_groups/%d", i.URL, id)
-	groups, err := fetchJobGroups(url)
+	groups, err := i.fetchJobGroups(url)
 	if err != nil {
 		return JobGroup{}, err
 	}
@@ -434,12 +431,12 @@ func (i *Instance) PostJobGroup(jobgroup JobGroup) (JobGroup, error) {
 
 func (i *Instance) GetParentJobGroups() ([]JobGroup, error) {
 	url := fmt.Sprintf("%s/api/v1/parent_groups", i.URL)
-	return fetchJobGroups(url)
+	return i.fetchJobGroups(url)
 }
 
 func (i *Instance) GetParentJobGroup(id int) (JobGroup, error) {
 	url := fmt.Sprintf("%s/api/v1/parent_groups/%d", i.URL, id)
-	groups, err := fetchJobGroups(url)
+	groups, err := i.fetchJobGroups(url)
 	if err != nil {
 		return JobGroup{}, err
 	}
@@ -464,87 +461,68 @@ func (i *Instance) PostParentJobGroup(jobgroup JobGroup) (JobGroup, error) {
 
 func (i *Instance) GetWorkers() ([]Worker, error) {
 	url := fmt.Sprintf("%s/api/v1/workers", i.URL)
-	return fetchWorkers(url)
+	return i.fetchWorkers(url)
 }
 
-func fetchJobs(url string) ([]Job, error) {
+func (i *Instance) fetchJobs(url string) ([]Job, error) {
 	jobs := make([]Job, 0)
-	r, err := http.Get(url)
+
+	resp, err := i.get(url, nil)
 	if err != nil {
 		return jobs, err
 	}
-	if r.StatusCode != 200 {
-		return jobs, fmt.Errorf("http status code %d", r.StatusCode)
-	}
-	err = json.NewDecoder(r.Body).Decode(&jobs)
+	err = json.Unmarshal(resp, &jobs)
 	return jobs, err
 }
 
-func fetchJobGroups(url string) ([]JobGroup, error) {
+func (i *Instance) fetchJobGroups(url string) ([]JobGroup, error) {
 	jobs := make([]JobGroup, 0)
-	r, err := http.Get(url)
-	if err != nil {
-		return jobs, err
-	}
-	if r.StatusCode != 200 {
-		return jobs, fmt.Errorf("http status code %d", r.StatusCode)
-	}
 
-	data, err := ioutil.ReadAll(r.Body)
+	resp, err := i.get(url, nil)
 	if err != nil {
 		return jobs, err
 	}
-	// Sometimes SizeLimit is returned as string but it should be an int. Fix this.
-	err = json.Unmarshal(data, &jobs)
+	// TODO: Sometimes SizeLimit is returned as string but it should be an int. Fix this.
+	err = json.Unmarshal(resp, &jobs)
 	return jobs, err
 }
 
-func fetchWorkers(url string) ([]Worker, error) {
-	r, err := http.Get(url)
+func (i *Instance) fetchWorkers(url string) ([]Worker, error) {
+	resp, err := i.get(url, nil)
 	if err != nil {
 		return make([]Worker, 0), err
 	}
-	if r.StatusCode != 200 {
-		return make([]Worker, 0), fmt.Errorf("http status code %d", r.StatusCode)
-	}
 	// workers come in a "workers:[...]" dict
 	workers := make(map[string][]Worker, 0)
-	err = json.NewDecoder(r.Body).Decode(&workers)
+	err = json.Unmarshal(resp, &workers)
 	if workers, ok := workers["workers"]; ok {
 		return workers, err
 	}
 	return make([]Worker, 0), nil
 }
 
-func fetchJobTemplates(url string) ([]JobTemplate, error) {
-	r, err := http.Get(url)
+func (i *Instance) fetchJobTemplates(url string) ([]JobTemplate, error) {
+	resp, err := i.get(url, nil)
 	if err != nil {
 		return make([]JobTemplate, 0), err
 	}
-	if r.StatusCode != 200 {
-		return make([]JobTemplate, 0), fmt.Errorf("http status code %d", r.StatusCode)
-	}
 	// the templates come as a "JobTemplates:[...]" dict
 	templates := make(map[string][]JobTemplate, 0)
-	err = json.NewDecoder(r.Body).Decode(&templates)
+	err = json.Unmarshal(resp, &templates)
 	if templates, ok := templates["JobTemplates"]; ok {
 		return templates, err
 	}
 	return make([]JobTemplate, 0), nil
 }
 
-func fetchMachines(url string) ([]Machine, error) {
-	r, err := http.Get(url)
+func (i *Instance) fetchMachines(url string) ([]Machine, error) {
+	resp, err := i.get(url, nil)
 	if err != nil {
 		return make([]Machine, 0), err
 	}
-	if r.StatusCode != 200 {
-		return make([]Machine, 0), fmt.Errorf("http status code %d", r.StatusCode)
-	}
-
 	// machines come as a "Machines:[...]" dict
 	machines := make(map[string][]machine2, 0)
-	err = json.NewDecoder(r.Body).Decode(&machines)
+	err = json.Unmarshal(resp, &machines)
 	if machines, ok := machines["Machines"]; ok {
 		// Parse those weird machines to actual machine instances
 		ret := make([]Machine, 0)
@@ -558,20 +536,17 @@ func fetchMachines(url string) ([]Machine, error) {
 	return make([]Machine, 0), nil
 }
 
-func fetchJob(url string) (Job, error) {
-	// Expected result structure
-	type ResultJob struct {
+func (i *Instance) fetchJob(url string) (Job, error) {
+	type ResultJob struct { // Expected result structure
 		Job Job `json:"job"`
 	}
 	var job ResultJob
-	r, err := http.Get(url)
+	resp, err := i.get(url, nil)
 	if err != nil {
 		return job.Job, err
 	}
-	if r.StatusCode != 200 {
-		return job.Job, fmt.Errorf("http status code %d", r.StatusCode)
-	}
-	err = json.NewDecoder(r.Body).Decode(&job)
+	// TODO: Sometimes SizeLimit is returned as string but it should be an int. Fix this.
+	err = json.Unmarshal(resp, &job)
 	return job.Job, err
 }
 
@@ -617,7 +592,7 @@ func (j *Job) FetchAllChildren(follow bool) ([]Job, error) {
 
 func (i *Instance) GetJobTemplates() ([]JobTemplate, error) {
 	url := fmt.Sprintf("%s/api/v1/job_templates", i.URL)
-	return fetchJobTemplates(url)
+	return i.fetchJobTemplates(url)
 }
 
 func (instance *Instance) GetJobGroupJobs(id int) ([]int, error) {
@@ -673,7 +648,7 @@ func (i *Instance) DeleteJobTemplate(id int) error {
 
 func (i *Instance) GetJobTemplate(id int) (JobTemplate, error) {
 	url := fmt.Sprintf("%s/api/v1/job_templates/%d", i.URL, id)
-	templates, err := fetchJobTemplates(url)
+	templates, err := i.fetchJobTemplates(url)
 	if err != nil {
 		return JobTemplate{}, err
 	}
@@ -697,12 +672,12 @@ func (i *Instance) PostJobTemplateYAML(id int, yaml string) error {
 
 func (i *Instance) GetMachines() ([]Machine, error) {
 	url := fmt.Sprintf("%s/api/v1/machines", i.URL)
-	return fetchMachines(url)
+	return i.fetchMachines(url)
 }
 
 func (i *Instance) GetMachine(id int) (Machine, error) {
 	url := fmt.Sprintf("%s/api/v1/machines/%d", i.URL, id)
-	if machines, err := fetchMachines(url); err != nil {
+	if machines, err := i.fetchMachines(url); err != nil {
 		return Machine{}, err
 	} else {
 		if len(machines) > 0 {
