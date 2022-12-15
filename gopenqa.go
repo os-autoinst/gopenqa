@@ -342,6 +342,7 @@ func (i *Instance) GetLatestJobs(testsuite string, params map[string]string) ([]
 	mapped := make(map[int]Job)
 	for _, job := range jobs.Jobs {
 		job.instance = i
+		job.Remote = i.URL
 		// TODO: Filter job results, if given
 
 		// Only keep newer jobs (by ID) per group
@@ -363,15 +364,16 @@ func (i *Instance) GetLatestJobs(testsuite string, params map[string]string) ([]
 }
 
 // GetJob fetches detailled job information
-func (i *Instance) GetJob(id int) (Job, error) {
+func (i *Instance) GetJob(id int64) (Job, error) {
 	url := fmt.Sprintf("%s/api/v1/jobs/%d", i.URL, id)
 	job, err := i.fetchJob(url)
 	job.Link = fmt.Sprintf("%s/tests/%d", i.URL, id)
 	job.instance = i
+	job.Remote = i.URL
 	return job, err
 }
 
-func (i *Instance) DeleteJob(id int) error {
+func (i *Instance) DeleteJob(id int64) error {
 	url := fmt.Sprintf("%s/api/v1/jobs/%d", i.URL, id)
 	buf, err := i.delete(url, nil)
 	if i.verbose {
@@ -381,7 +383,7 @@ func (i *Instance) DeleteJob(id int) error {
 }
 
 // GetJob fetches detailled job information and follows the job, if it contains a CloneID
-func (i *Instance) GetJobFollow(id int) (Job, error) {
+func (i *Instance) GetJobFollow(id int64) (Job, error) {
 	recursions := 0 // keep track of the number of recursions
 fetch:
 	url := fmt.Sprintf("%s/api/v1/jobs/%d", i.URL, id)
@@ -396,6 +398,7 @@ fetch:
 	}
 	job.Link = fmt.Sprintf("%s/tests/%d", i.URL, id)
 	job.instance = i
+	job.Remote = i.URL
 	return job, err
 }
 
@@ -566,7 +569,7 @@ func mergeParams(params map[string]string) string {
  * Fetch the given child jobs. Use with j.Children.Chained, j.Children.DirectlyChained and j.Children.Parallel
  * if follow is set to true, the method will return the cloned job instead of the original one, if present
  */
-func (j *Job) FetchChildren(children []int, follow bool) ([]Job, error) {
+func (j *Job) FetchChildren(children []int64, follow bool) ([]Job, error) {
 	jobs := make([]Job, 0)
 	for _, id := range children {
 		job, err := j.instance.GetJobFollow(id)
@@ -583,7 +586,7 @@ func (j *Job) FetchChildren(children []int, follow bool) ([]Job, error) {
  * follow determines if we should follow the given children, i.e. get their cloned jobs instead of the original ones if present
  */
 func (j *Job) FetchAllChildren(follow bool) ([]Job, error) {
-	children := make([]int, 0)
+	children := make([]int64, 0)
 	children = append(children, j.Children.Chained...)
 	children = append(children, j.Children.DirectlyChained...)
 	children = append(children, j.Children.Parallel...)
@@ -595,8 +598,8 @@ func (i *Instance) GetJobTemplates() ([]JobTemplate, error) {
 	return i.fetchJobTemplates(url)
 }
 
-func (instance *Instance) GetJobGroupJobs(id int) ([]int, error) {
-	ids := make([]int, 0)
+func (instance *Instance) GetJobGroupJobs(id int) ([]int64, error) {
+	ids := make([]int64, 0)
 	url := fmt.Sprintf("%s/api/v1/job_groups/%d/jobs", instance.URL, id)
 	buf, err := instance.get(url, nil)
 	if err != nil {
@@ -605,7 +608,7 @@ func (instance *Instance) GetJobGroupJobs(id int) ([]int, error) {
 	if instance.verbose {
 		fmt.Fprintf(os.Stderr, "%s\n", buf)
 	}
-	var obj map[string][]int // Result: {"ids":[5095,5096,5097,5101,5102]}
+	var obj map[string][]int64 // Result: {"ids":[5095,5096,5097,5101,5102]}
 	if err = json.Unmarshal(buf, &obj); err != nil {
 		return ids, err
 	}

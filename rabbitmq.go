@@ -4,6 +4,8 @@ package gopenqa
 
 import (
 	"encoding/json"
+	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/streadway/amqp"
@@ -11,18 +13,19 @@ import (
 
 // JobStatus is the returns struct for job status updates from RabbitMQ
 type JobStatus struct {
-	Arch      string `json:"ARCH"`
-	Build     string `json:"BUILD"`
-	Flavor    string `json:"FLAVOR"`
-	Machine   string `json:"MACHINE"`
-	Test      string `json:"TEST"`
-	BugRef    string `json:"bugref"`
-	GroupID   int    `json:"group_id"`
-	ID        int    `json:"id"`
-	NewBuild  string `json:"newbuild"`
-	Reason    string `json:"reason"`
-	Remaining int    `json:"remaining"`
-	Result    string `json:"result"`
+	Type      string      // Type of the update. Currently "job.done" and "job.restarted" are set
+	Arch      string      `json:"ARCH"`
+	Build     string      `json:"BUILD"`
+	Flavor    string      `json:"FLAVOR"`
+	Machine   string      `json:"MACHINE"`
+	Test      string      `json:"TEST"`
+	BugRef    string      `json:"bugref"`
+	GroupID   int         `json:"group_id"`
+	ID        int64       `json:"id"`
+	NewBuild  string      `json:"newbuild"`
+	Reason    string      `json:"reason"`
+	Remaining int         `json:"remaining"`
+	Result    interface{} `json:"result"`
 }
 
 // RabbitMQ comment
@@ -50,11 +53,17 @@ type RabbitMQSubscription struct {
 	channel *amqp.Channel
 	key     string
 	obs     <-chan amqp.Delivery
+	mq      *RabbitMQ
 }
 
-// Receive receives a raw RabbitMQ messages
+// Receive receives a raw non-empty RabbitMQ messages
 func (sub *RabbitMQSubscription) Receive() (amqp.Delivery, error) {
-	return <-sub.obs, nil
+	for {
+		msg := <-sub.obs
+		if len(msg.Body) > 0 {
+			return msg, nil
+		}
+	}
 }
 
 // ReceiveJob receives the next message and try to parse it as job
@@ -84,12 +93,59 @@ func (sub *RabbitMQSubscription) ReceiveJobStatus() (JobStatus, error) {
 	if err != nil {
 		return status, err
 	}
+
+	type IJobStatus struct {
+		Type      string      // Type of the update. Currently "job.done" and "job.restarted" are set
+		Arch      string      `json:"ARCH"`
+		Build     string      `json:"BUILD"`
+		Flavor    string      `json:"FLAVOR"`
+		Machine   string      `json:"MACHINE"`
+		Test      string      `json:"TEST"`
+		BugRef    string      `json:"bugref"`
+		GroupID   int         `json:"group_id"`
+		ID        interface{} `json:"id"`
+		NewBuild  string      `json:"newbuild"`
+		Reason    string      `json:"reason"`
+		Remaining int         `json:"remaining"`
+		Result    interface{} `json:"result"`
+	}
 	// Try to unmarshall to json
-	err = json.Unmarshal(d.Body, &status)
+	var istatus IJobStatus
+	err = json.Unmarshal(d.Body, &istatus)
 	if err != nil {
 		return status, err
 	}
-	return status, err
+	status.Arch = istatus.Arch
+	status.Build = istatus.Build
+	status.Flavor = istatus.Flavor
+	status.Machine = istatus.Machine
+	status.Test = istatus.Test
+	status.BugRef = istatus.BugRef
+	status.GroupID = istatus.GroupID
+	status.NewBuild = istatus.NewBuild
+	status.Reason = istatus.Reason
+	status.Remaining = istatus.Remaining
+	status.Result = istatus.Result
+
+	// Due to poo#114529 we need to do a bit of magic with the ID
+	if unboxed, ok := istatus.ID.(string); ok {
+		status.ID, _ = strconv.ParseInt(unboxed, 10, 64) // ignore error
+	} else if unboxed, ok := istatus.ID.(int64); ok {
+		status.ID = unboxed
+	} else if unboxed, ok := istatus.ID.(int); ok {
+		status.ID = int64(unboxed)
+	} else {
+		return status, fmt.Errorf("invalid ID type")
+	}
+
+	// Determine type based on routing key
+	key := d.RoutingKey
+	if strings.HasSuffix(key, ".job.done") {
+		status.Type = "job.done"
+	} else if strings.HasSuffix(key, ".job.restart") {
+		status.Type = "job.restarted"
+	}
+	return status, nil
 }
 
 // ReceiveJobStatus receives the next message and try to parse it as Comment. Use this for job status updates
@@ -136,7 +192,8 @@ func (mq *RabbitMQ) Subscribe(key string) (RabbitMQSubscription, error) {
 	}
 
 	// Create message queue and receive channel
-	q, err := ch.QueueDeclare("", false, false, false, false, nil)
+	// Create a new exclusive queue with auto-delete
+	q, err := ch.QueueDeclare("", false, false, true, true, nil)
 	if err != nil {
 		ch.Close()
 		return sub, err

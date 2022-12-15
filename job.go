@@ -8,9 +8,9 @@ type Job struct {
 	BlockedByID      int      `json:"blocked_by_id"`
 	Children         Children `json:"children"`
 	Parents          Children `json:"parents"`
-	CloneID          int      `json:"clone_id"`
+	CloneID          int64    `json:"clone_id"`
 	GroupID          int      `json:"group_id"`
-	ID               int      `json:"id"`
+	ID               int64    `json:"id"`
 	// Modules
 	Name string `json:"name"`
 	// Parents
@@ -24,14 +24,15 @@ type Job struct {
 	/* this is added by the program and not part of the fetched json */
 	Link     string
 	Prefix   string
+	Remote   string // openQA remote host
 	instance *Instance
 }
 
 /* Children struct is for chained, directly chained and parallel children/parents */
 type Children struct {
-	Chained         []int `json:"Chained"`
-	DirectlyChained []int `json:"Directly chained"`
-	Parallel        []int `json:"Parallel"`
+	Chained         []int64 `json:"Chained"`
+	DirectlyChained []int64 `json:"Directly chained"`
+	Parallel        []int64 `json:"Parallel"`
 }
 
 /* Job Setting struct */
