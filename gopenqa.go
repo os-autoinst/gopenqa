@@ -820,7 +820,7 @@ func (i *Instance) PostProduct(product Product) (Product, error) {
 }
 
 /* Fetch comments for a given job */
-func (i *Instance) GetComments(job int) ([]Comment, error) {
+func (i *Instance) GetComments(job int64) ([]Comment, error) {
 	ret := make([]Comment, 0)
 	rurl := fmt.Sprintf("%s/api/v1/jobs/%d/comments", i.URL, job)
 	buf, err := i.get(rurl, nil)
