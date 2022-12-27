@@ -134,6 +134,9 @@ func (sub *RabbitMQSubscription) ReceiveJobStatus() (JobStatus, error) {
 		status.ID = unboxed
 	} else if unboxed, ok := istatus.ID.(int); ok {
 		status.ID = int64(unboxed)
+	} else if unboxed, ok := istatus.ID.(float64); ok {
+		// Values larger than int are sometimes parsed as float64
+		status.ID = int64(float64(unboxed))
 	} else {
 		return status, fmt.Errorf("invalid ID type")
 	}
