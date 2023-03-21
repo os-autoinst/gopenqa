@@ -111,7 +111,7 @@ func (sub *RabbitMQSubscription) Receive() (amqp.Delivery, error) {
 			return msg, nil
 		}
 	}
-	if sub.mq.closed || sub.con.IsClosed() {
+	if sub.mq == nil || sub.mq.closed || sub.con == nil || sub.con.IsClosed() {
 		return amqp.Delivery{}, fmt.Errorf("EOF")
 	}
 	return amqp.Delivery{}, fmt.Errorf("channel unexpectedly closed")
