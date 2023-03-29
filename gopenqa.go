@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -20,8 +21,10 @@ type Instance struct {
 	apikey        string
 	apisecret     string
 	verbose       bool
-	maxRecursions int    // Maximum number of recursions
-	userAgent     string // Useragent sent with the request
+	maxRecursions int        // Maximum number of recursions
+	userAgent     string     // Useragent sent with the request
+	allowParallel bool       // Allow parallel requests (default: No)
+	mutFetching   sync.Mutex // Mutex to ensure only one request at the time is performed
 }
 
 // the settings are given as dict:
@@ -138,7 +141,7 @@ func EmptyParams() map[string]string {
 
 /* Create a openQA instance module */
 func CreateInstance(url string) Instance {
-	inst := Instance{URL: url, maxRecursions: 10, verbose: false, userAgent: "gopenqa"}
+	inst := Instance{URL: url, maxRecursions: 10, verbose: false, userAgent: "gopenqa", allowParallel: false}
 	return inst
 }
 
@@ -166,6 +169,11 @@ func (i *Instance) SetVerbose(verbose bool) {
 // Set the UserAgent for HTTP requests
 func (i *Instance) SetUserAgent(userAgent string) {
 	i.userAgent = userAgent
+}
+
+// Set to allow or disallow parallel requests to the instance
+func (i *Instance) SetAllowParallel(allow bool) {
+	i.allowParallel = allow
 }
 
 func assignInstance(jobs []Job, instance *Instance) []Job {
@@ -226,6 +234,12 @@ func (i *Instance) put(url string, data []byte) ([]byte, error) {
  * Add the APIKEY and APISECRET credentials, if given
  */
 func (i *Instance) request(method string, url string, data []byte) ([]byte, error) {
+	// Request mutex to ensure, only one request at the time
+	if !i.allowParallel {
+		i.mutFetching.Lock()
+		defer i.mutFetching.Unlock()
+	}
+
 	contentType := ""
 	if data == nil {
 		data = make([]byte, 0)
