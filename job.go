@@ -46,11 +46,18 @@ type Settings struct {
 func (j *Job) String() string {
 	return fmt.Sprintf("%d %s (%s)", j.ID, j.Name, j.Test)
 }
+
+/* JobState returns or the job state or the result, if the job is done */
 func (j *Job) JobState() string {
 	if j.State == "done" {
 		return j.Result
 	}
 	return j.State
+}
+
+/* IsCloned returns true, if the job has been cloned/restarted */
+func (j *Job) IsCloned() bool {
+	return j.CloneID != 0 && j.CloneID != j.ID
 }
 
 /* Compares two jobs according to their unique parameters (ID, GroupID, Test) */
