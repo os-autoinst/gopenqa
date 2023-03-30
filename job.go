@@ -42,6 +42,13 @@ type Settings struct {
 	Machine string `json:"MACHINE"`
 }
 
+/* Special struct for getting quick job status */
+type JobState struct {
+	BlockedBy int64  `json:"blocked_by_id"`
+	Result    string `json:"result"`
+	State     string `json:"state"`
+}
+
 /* Format job as a string */
 func (j *Job) String() string {
 	return fmt.Sprintf("%d %s (%s)", j.ID, j.Name, j.Test)

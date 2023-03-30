@@ -445,6 +445,12 @@ fetch:
 	return job, err
 }
 
+// GetJobState uses the (currently experimental) API call to quickly fetch a job state
+func (i *Instance) GetJobState(id int64) (JobState, error) {
+	url := fmt.Sprintf("%s/api/v1//experimental/jobs/%d/status", i.URL, id)
+	return i.fetchJobState(url)
+}
+
 func (i *Instance) GetJobGroups() ([]JobGroup, error) {
 	url := fmt.Sprintf("%s/api/v1/job_groups", i.URL)
 	return i.fetchJobGroups(url)
@@ -617,6 +623,16 @@ func (i *Instance) fetchJob(url string) (Job, error) {
 	// TODO: Sometimes SizeLimit is returned as string but it should be an int. Fix this.
 	err = json.Unmarshal(resp, &job)
 	return job.Job, err
+}
+
+func (i *Instance) fetchJobState(url string) (JobState, error) {
+	var state JobState
+	resp, err := i.get(url, nil)
+	if err != nil {
+		return state, err
+	}
+	err = json.Unmarshal(resp, &state)
+	return state, err
 }
 
 /* merge given parameter string to URL parameters */
