@@ -377,14 +377,38 @@ func (i *Instance) GetLatestJobs(testsuite string, params map[string]string) ([]
 
 }
 
+func (job *Job) applyInstance(i *Instance) {
+	job.Link = fmt.Sprintf("%s/tests/%d", i.URL, job.ID)
+	job.instance = i
+	job.Remote = i.URL
+}
+
 // GetJob fetches detailled job information
 func (i *Instance) GetJob(id int64) (Job, error) {
 	url := fmt.Sprintf("%s/api/v1/jobs/%d", i.URL, id)
 	job, err := i.fetchJob(url)
-	job.Link = fmt.Sprintf("%s/tests/%d", i.URL, id)
-	job.instance = i
-	job.Remote = i.URL
+	job.applyInstance(i)
 	return job, err
+}
+
+// GetJob fetches detailled information about a list of jobs
+func (i *Instance) GetJobs(ids []int64) ([]Job, error) {
+	if len(ids) == 0 {
+		return make([]Job, 0), nil
+	}
+	url := fmt.Sprintf("%s/api/v1/jobs", i.URL)
+	// Add job ids to URL
+	// Note: I'm not using strings.Join because that requires me to first convert ids to a []string and I believe the following approach is not worse
+	first := true
+	for _, id := range ids {
+		if first {
+			first = false
+			url = fmt.Sprintf("%s?ids=%d", url, id)
+		} else {
+			url = fmt.Sprintf("%s&ids=%d", url, id)
+		}
+	}
+	return i.fetchJobsArray(url)
 }
 
 func (i *Instance) DeleteJob(id int64) error {
@@ -410,9 +434,6 @@ fetch:
 		id = job.CloneID
 		goto fetch
 	}
-	job.Link = fmt.Sprintf("%s/tests/%d", i.URL, id)
-	job.instance = i
-	job.Remote = i.URL
 	return job, err
 }
 
@@ -481,21 +502,44 @@ func (i *Instance) GetWorkers() ([]Worker, error) {
 	return i.fetchWorkers(url)
 }
 
-func (i *Instance) fetchJobs(url string) ([]Job, error) {
+// fetchJobs fetches the given url and returns all jobs returned by it (as direct array)
+func (inst *Instance) fetchJobs(url string) ([]Job, error) {
 	jobs := make([]Job, 0)
 
-	resp, err := i.get(url, nil)
+	resp, err := inst.get(url, nil)
 	if err != nil {
 		return jobs, err
 	}
 	err = json.Unmarshal(resp, &jobs)
+	for i, job := range jobs {
+		job.applyInstance(inst)
+		jobs[i] = job
+	}
 	return jobs, err
 }
 
-func (i *Instance) fetchJobGroups(url string) ([]JobGroup, error) {
+// fetchJobs fetches the given url and returns all jobs, It expects the jobs to be within the "jobs" dict of the result
+func (inst *Instance) fetchJobsArray(url string) ([]Job, error) {
+	type ResultJob struct { // Expected result structure
+		Jobs []Job `json:"jobs"`
+	}
+	var ret ResultJob
+	resp, err := inst.get(url, nil)
+	if err != nil {
+		return make([]Job, 0), err
+	}
+	err = json.Unmarshal(resp, &ret)
+	for i, job := range ret.Jobs {
+		job.applyInstance(inst)
+		ret.Jobs[i] = job
+	}
+	return ret.Jobs, err
+}
+
+func (inst *Instance) fetchJobGroups(url string) ([]JobGroup, error) {
 	jobs := make([]JobGroup, 0)
 
-	resp, err := i.get(url, nil)
+	resp, err := inst.get(url, nil)
 	if err != nil {
 		return jobs, err
 	}
