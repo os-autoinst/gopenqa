@@ -135,6 +135,14 @@ func (p *product2) encodeParams() string {
 	return params.Encode()
 }
 
+func ExtractJobIDS(jobs []Job) []int64 {
+	ret := make([]int64, 0)
+	for _, job := range jobs {
+		ret = append(ret, job.ID)
+	}
+	return ret
+}
+
 func EmptyParams() map[string]string {
 	return make(map[string]string, 0)
 }
