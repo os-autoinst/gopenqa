@@ -635,17 +635,24 @@ func mergeParams(params map[string]string) string {
  * Fetch the given child jobs. Use with j.Children.Chained, j.Children.DirectlyChained and j.Children.Parallel
  * if follow is set to true, the method will return the cloned job instead of the original one, if present
  */
-func (j *Job) FetchChildren(children []int64, follow bool) ([]Job, error) {
-	jobs := make([]Job, 0)
-	for _, id := range children {
-		job, err := j.instance.GetJobFollow(id)
-		if err != nil {
-			return jobs, err
-		}
-		jobs = append(jobs, job)
+func (j *Job) FetchChildren(ids []int64, follow bool) ([]Job, error) {
+	children, err := j.instance.GetJobs(ids)
+	if err != nil {
+		return children, err
 	}
-
-	return jobs, nil
+	if follow {
+		for i, job := range children {
+			// Fetch cloned job, if present
+			if job.CloneID != 0 && job.CloneID != job.ID {
+				job, err := j.instance.GetJobFollow(job.ID)
+				if err != nil {
+					return children, err
+				}
+				children[i] = job
+			}
+		}
+	}
+	return children, nil
 }
 
 /* Fetch all child jobs
