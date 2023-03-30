@@ -359,6 +359,9 @@ func (i *Instance) GetLatestJobs(testsuite string, params map[string]string) ([]
 		return jobs.Jobs, err
 	}
 	err = json.Unmarshal(resp, &jobs)
+	if err != nil {
+		return jobs.Jobs, err
+	}
 
 	// Now, get only the latest job per group_id
 	mapped := make(map[int]Job)
@@ -382,7 +385,6 @@ func (i *Instance) GetLatestJobs(testsuite string, params map[string]string) ([]
 		ret = append(ret, v)
 	}
 	return ret, nil
-
 }
 
 func (job *Job) applyInstance(i *Instance) {
@@ -395,7 +397,6 @@ func (job *Job) applyInstance(i *Instance) {
 func (i *Instance) GetJob(id int64) (Job, error) {
 	url := fmt.Sprintf("%s/api/v1/jobs/%d", i.URL, id)
 	job, err := i.fetchJob(url)
-	job.applyInstance(i)
 	return job, err
 }
 
@@ -429,20 +430,20 @@ func (i *Instance) DeleteJob(id int64) error {
 }
 
 // GetJob fetches detailled job information and follows the job, if it contains a CloneID
-func (i *Instance) GetJobFollow(id int64) (Job, error) {
-	recursions := 0 // keep track of the number of recursions
-fetch:
-	url := fmt.Sprintf("%s/api/v1/jobs/%d", i.URL, id)
-	job, err := i.fetchJob(url)
-	if job.CloneID != 0 && job.CloneID != job.ID {
-		recursions++
-		if i.maxRecursions != 0 && recursions >= i.maxRecursions {
-			return job, fmt.Errorf("maximum recusion depth reached")
+func (inst *Instance) GetJobFollow(id int64) (Job, error) {
+	for recursion := 0; recursion < inst.maxRecursions; recursion++ {
+		url := fmt.Sprintf("%s/api/v1/jobs/%d", inst.URL, id)
+		job, err := inst.fetchJob(url)
+		if err != nil {
+			return job, err
 		}
-		id = job.CloneID
-		goto fetch
+		if job.IsCloned() {
+			id = job.CloneID
+			continue
+		}
+		return job, nil
 	}
-	return job, err
+	return Job{}, fmt.Errorf("maximum recusion depth reached")
 }
 
 // GetJobState uses the (currently experimental) API call to quickly fetch a job state
@@ -611,17 +612,18 @@ func (i *Instance) fetchMachines(url string) ([]Machine, error) {
 	return make([]Machine, 0), nil
 }
 
-func (i *Instance) fetchJob(url string) (Job, error) {
+func (inst *Instance) fetchJob(url string) (Job, error) {
 	type ResultJob struct { // Expected result structure
 		Job Job `json:"job"`
 	}
 	var job ResultJob
-	resp, err := i.get(url, nil)
+	resp, err := inst.get(url, nil)
 	if err != nil {
 		return job.Job, err
 	}
 	// TODO: Sometimes SizeLimit is returned as string but it should be an int. Fix this.
 	err = json.Unmarshal(resp, &job)
+	job.Job.applyInstance(inst)
 	return job.Job, err
 }
 
