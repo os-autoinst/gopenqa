@@ -117,6 +117,11 @@ func (sub *RabbitMQSubscription) Receive() (amqp.Delivery, error) {
 	return amqp.Delivery{}, fmt.Errorf("channel unexpectedly closed")
 }
 
+// ReceiveChannel returns the subscription's read channel
+func (sub *RabbitMQSubscription) ReceiveChannel() <-chan amqp.Delivery {
+	return sub.obs
+}
+
 // ReceiveJob receives the next message and try to parse it as job
 func (sub *RabbitMQSubscription) ReceiveJob() (Job, error) {
 	var job Job
