@@ -420,6 +420,28 @@ func (i *Instance) GetJobs(ids []int64) ([]Job, error) {
 	return i.fetchJobsArray(url)
 }
 
+// GetJob fetches detailled information about a list of jobs. Follows cloned jobs, if applicable
+func (inst *Instance) GetJobsFollow(ids []int64) ([]Job, error) {
+	jobs, err := inst.GetJobs(ids)
+	if err != nil {
+		return jobs, err
+	}
+
+	// Fetch cloned jobs one by one. Since it is possible for a job to have two cloned jobs
+	// the relation between an original job and it's cloned job is not directly visible.
+	// This means we have to fetch each job individually, so that we can keep track of the jobs origin
+	for i, job := range jobs {
+		if job.IsCloned() {
+			job, err := inst.GetJobFollow(job.ID)
+			if err != nil {
+				return jobs, err
+			}
+			jobs[i] = job
+		}
+	}
+	return jobs, nil
+}
+
 func (i *Instance) DeleteJob(id int64) error {
 	url := fmt.Sprintf("%s/api/v1/jobs/%d", i.URL, id)
 	buf, err := i.delete(url, nil)
