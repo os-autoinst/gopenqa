@@ -50,12 +50,14 @@ type RabbitMQCloseCallback func(error)
 // Close connection
 func (mq *RabbitMQ) Close() {
 	mq.closed = true
-	mq.con.Close()
+	if mq.con != nil {
+		mq.con.Close()
+	}
 }
 
 // Connected returns true if RabbitMQ is connected
 func (mq *RabbitMQ) Connected() bool {
-	return !mq.closed && !mq.con.IsClosed()
+	return !mq.closed && (mq.con != nil) && !mq.con.IsClosed()
 }
 
 // Connected returns true if RabbitMQ is closing or if it is closed.
@@ -63,7 +65,7 @@ func (mq *RabbitMQ) Closed() bool {
 	if mq.closed {
 		return true
 	}
-	if mq.con.IsClosed() {
+	if mq.con == nil || mq.con.IsClosed() {
 		mq.closed = true
 		return true
 	}
@@ -73,7 +75,9 @@ func (mq *RabbitMQ) Closed() bool {
 // Reconnect to the RabbitMQ server. This will close any previous connections and channels
 func (mq *RabbitMQ) Reconnect() error {
 	var err error
-	mq.con.Close()
+	if mq.con != nil {
+		mq.con.Close()
+	}
 	mq.closed = false
 	mq.con, err = amqp.Dial(mq.remote)
 	return err
@@ -145,6 +149,7 @@ func (sub *RabbitMQSubscription) ReceiveJobStatus() (JobStatus, error) {
 		return status, err
 	}
 
+	// Required due to poo#114529
 	type IJobStatus struct {
 		Type      string      // Type of the update. Currently "job.done" and "job.restarted" are set
 		Arch      string      `json:"ARCH"`
