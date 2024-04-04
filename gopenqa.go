@@ -665,8 +665,11 @@ func mergeParams(params map[string]string) string {
 		return ""
 	}
 	vals := make([]string, 0)
-	for k, v := range params {
-		vals = append(vals, fmt.Sprintf("%s=%s", k, v))
+	for k, arg := range params {
+		// openQA supports parameter arrays by passing them multiple times. We do this by splitting commas
+		for _, v := range strings.Split(arg, ",") {
+			vals = append(vals, fmt.Sprintf("%s=%s", k, v))
+		}
 	}
 	return strings.Join(vals, "&")
 }
