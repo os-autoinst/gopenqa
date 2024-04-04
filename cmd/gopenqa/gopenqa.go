@@ -7,7 +7,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"os"
 	"strconv"
 	"strings"
@@ -150,18 +150,18 @@ func readMachines(filename string) ([]gopenqa.Machine, error) {
 	var err error
 
 	if filename == "" {
-		data, err = ioutil.ReadAll(os.Stdin)
+		data, err = io.ReadAll(os.Stdin)
 		if err != nil {
 			machines := make([]gopenqa.Machine, 0)
 			return machines, err
 		}
 	} else {
-		// TODO: Don't use ioutil.ReadAll
+		// TODO: Don't use io.ReadAll
 		if file, err := os.Open(filename); err != nil {
 			return make([]gopenqa.Machine, 0), err
 		} else {
 			defer file.Close()
-			data, err = ioutil.ReadAll(file)
+			data, err = io.ReadAll(file)
 			if err != nil {
 				return make([]gopenqa.Machine, 0), err
 			}
@@ -192,17 +192,17 @@ func readProducts(filename string) ([]gopenqa.Product, error) {
 	var err error
 
 	if filename == "" {
-		data, err = ioutil.ReadAll(os.Stdin)
+		data, err = io.ReadAll(os.Stdin)
 		if err != nil {
 			return make([]gopenqa.Product, 0), err
 		}
 	} else {
-		// TODO: Don't use ioutil.ReadAll
+		// TODO: Don't use io.ReadAll
 		if file, err := os.Open(filename); err != nil {
 			return make([]gopenqa.Product, 0), err
 		} else {
 			defer file.Close()
-			data, err = ioutil.ReadAll(file)
+			data, err = io.ReadAll(file)
 			if err != nil {
 				return make([]gopenqa.Product, 0), err
 			}
@@ -233,17 +233,17 @@ func readJobGroups(filename string) ([]gopenqa.JobGroup, error) {
 	var err error
 
 	if filename == "" {
-		data, err = ioutil.ReadAll(os.Stdin)
+		data, err = io.ReadAll(os.Stdin)
 		if err != nil {
 			return make([]gopenqa.JobGroup, 0), err
 		}
 	} else {
-		// TODO: Don't use ioutil.ReadAll
+		// TODO: Don't use io.ReadAll
 		if file, err := os.Open(filename); err != nil {
 			return make([]gopenqa.JobGroup, 0), err
 		} else {
 			defer file.Close()
-			data, err = ioutil.ReadAll(file)
+			data, err = io.ReadAll(file)
 			if err != nil {
 				return make([]gopenqa.JobGroup, 0), err
 			}

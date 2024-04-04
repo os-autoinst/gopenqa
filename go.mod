@@ -1,6 +1,6 @@
 module github.com/grisu48/gopenqa
 
-go 1.14
+go 1.16
 
 require (
 	github.com/google/go-cmp v0.6.0 // indirect
