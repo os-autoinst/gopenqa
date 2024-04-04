@@ -3,7 +3,7 @@
 `gopenqa` is a (intentional bad name for a) openQA module written in go.
 The aim of the project is to create an easy-to-use go library for interacting with openQA.
 
-*This project is under development and not yet stable. API changes can still occur at any time.*
+The project is not feature-complete regarding the openQA API. PR extending the internal API to include your needs are welcome.
 
 ## What works
 
@@ -18,5 +18,5 @@ The aim of the project is to create an easy-to-use go library for interacting wi
 
 # Getting started
 
-Checkout the [examples](examples) provided within the project for getting a feeling, how this project can be used.
+Checkout the [examples](examples) provided within the project.
 
