@@ -6,7 +6,7 @@ import (
 	"crypto/sha1"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -294,9 +294,9 @@ func (i *Instance) request(method string, url string, data []byte) ([]byte, erro
 		return make([]byte, 0), err
 	}
 
-	// First read body
+	// First read body to have it ready in case of errors
 	defer r.Body.Close()
-	buf, err := ioutil.ReadAll(r.Body) // TODO: Limit read size
+	buf, err := io.ReadAll(r.Body) // TODO: Limit read size
 	if err != nil {
 		return buf, err
 	}
