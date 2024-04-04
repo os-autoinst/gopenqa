@@ -30,15 +30,15 @@ type Instance struct {
 // the settings are given as dict:
 // e.g. "settings":[{"key":"WORKER_CLASS","value":"\"plebs\""}]}]
 // We create an internal struct to account for that
-type machine2 struct {
+type machineSettings struct {
 	ID       int                 `json:"id"`
 	Backend  string              `json:"backend"`
 	Name     string              `json:"name"`
 	Settings []map[string]string `json:"settings"`
 }
 
-// same as machine2 for Product
-type product2 struct {
+// same as machineSettings for Product
+type productSettings struct {
 	Arch     string              `json:"arch"`
 	Distri   string              `json:"distri"`
 	Flavor   string              `json:"flavor"`
@@ -75,21 +75,21 @@ func convertSettingsTo(settings []map[string]string) map[string]string {
 	return ret
 }
 
-func (mach *machine2) CopySettingsFrom(src Machine) {
+func (mach *machineSettings) CopySettingsFrom(src Machine) {
 	mach.Settings = convertSettingsFrom(src.Settings)
 }
-func (mach *machine2) CopySettingsTo(dst *Machine) {
+func (mach *machineSettings) CopySettingsTo(dst *Machine) {
 	dst.Settings = convertSettingsTo(mach.Settings)
 }
 
-func (p *product2) CopySettingsFrom(src Product) {
+func (p *productSettings) CopySettingsFrom(src Product) {
 	p.Settings = convertSettingsFrom(src.Settings)
 }
-func (p *product2) CopySettingsTo(dst *Product) {
+func (p *productSettings) CopySettingsTo(dst *Product) {
 	dst.Settings = convertSettingsTo(p.Settings)
 }
 
-func (w *product2) toProduct() Product {
+func (w *productSettings) toProduct() Product {
 	p := Product{}
 	p.Arch = w.Arch
 	p.Distri = w.Distri
@@ -101,8 +101,8 @@ func (w *product2) toProduct() Product {
 	return p
 }
 
-func createProduct2(p Product) product2 {
-	w := product2{}
+func createProduct2(p Product) productSettings {
+	w := productSettings{}
 	w.Arch = p.Arch
 	w.Distri = p.Distri
 	w.Flavor = p.Flavor
@@ -114,7 +114,7 @@ func createProduct2(p Product) product2 {
 }
 
 /* Get www-form-urlencoded parameters of this Product */
-func (p *product2) encodeParams() string {
+func (p *productSettings) encodeParams() string {
 	params := url.Values{}
 	params.Add("arch", p.Arch)
 	params.Add("distri", p.Distri)
@@ -149,8 +149,7 @@ func EmptyParams() map[string]string {
 
 /* Create a openQA instance module */
 func CreateInstance(url string) Instance {
-	inst := Instance{URL: url, maxRecursions: 10, verbose: false, userAgent: "gopenqa", allowParallel: false}
-	return inst
+	return Instance{URL: url, maxRecursions: 10, verbose: false, userAgent: "gopenqa", allowParallel: false}
 }
 
 /* Create a openQA instance module for openqa.opensuse.org */
@@ -229,13 +228,6 @@ func (i *Instance) post(url string, data []byte) ([]byte, error) {
  */
 func (i *Instance) delete(url string, data []byte) ([]byte, error) {
 	return i.request("DELETE", url, data)
-}
-
-/* Perform a PUT request on the given url, and send the data as JSON if given
- * Add the APIKEY and APISECRET credentials, if given
- */
-func (i *Instance) put(url string, data []byte) ([]byte, error) {
-	return i.request("PUT", url, data)
 }
 
 /* Perform a request on the given url, and send the data as JSON if given
@@ -619,7 +611,7 @@ func (i *Instance) fetchMachines(url string) ([]Machine, error) {
 		return make([]Machine, 0), err
 	}
 	// machines come as a "Machines:[...]" dict
-	machines := make(map[string][]machine2, 0)
+	machines := make(map[string][]machineSettings, 0)
 	err = json.Unmarshal(resp, &machines)
 	if machines, ok := machines["Machines"]; ok {
 		// Parse those weird machines to actual machine instances
@@ -830,7 +822,7 @@ func (i *Instance) PostMachine(machine Machine) (Machine, error) {
 
 	// Setting are encoded in a bit weird way
 	// Note: This is not supported by openQA at the moment, but we keep it here for when it does.
-	wmach := machine2{Name: machine.Name, ID: machine.ID, Backend: machine.Backend}
+	wmach := machineSettings{Name: machine.Name, ID: machine.ID, Backend: machine.Backend}
 	wmach.CopySettingsFrom(machine)
 
 	// Encode the machine settings as JSON
@@ -870,7 +862,7 @@ func (i *Instance) GetProducts() ([]Product, error) {
 	if err != nil {
 		return products, err
 	}
-	var obj map[string][]product2
+	var obj map[string][]productSettings
 	if err := json.Unmarshal(buf, &obj); err != nil {
 		return products, err
 	}
@@ -893,7 +885,7 @@ func (i *Instance) GetProduct(id int) (Product, error) {
 	if err != nil {
 		return Product{}, err
 	}
-	var obj map[string][]product2
+	var obj map[string][]productSettings
 	if err := json.Unmarshal(buf, &obj); err != nil {
 		return Product{}, err
 	}
