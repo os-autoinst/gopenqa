@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/streadway/amqp"
+	amqp "github.com/rabbitmq/amqp091-go"
 )
 
 // JobStatus is the returns struct for job status updates from RabbitMQ
