@@ -14,7 +14,7 @@ The project is not feature-complete regarding the openQA API. PR extending the i
 
 # Installation
 
-    go get github.com/grisu48/gopenqa
+    go get github.com/os-autoinst/gopenqa
 
 # Getting started
 
