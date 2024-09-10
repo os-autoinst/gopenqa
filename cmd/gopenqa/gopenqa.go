@@ -12,7 +12,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/grisu48/gopenqa"
+	"github.com/os-autoinst/gopenqa"
 )
 
 type Config struct {

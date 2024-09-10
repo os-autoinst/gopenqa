@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/grisu48/gopenqa"
+	"github.com/os-autoinst/gopenqa"
 )
 
 func main() {
