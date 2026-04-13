@@ -51,7 +51,7 @@ func runJob(args []string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Println(job.String())
+	fmt.Printf("id=%d state=%s result=%s\n", job.ID, job.State, job.Result)
 	return nil
 }
 
@@ -74,7 +74,7 @@ func runJobs(args []string) error {
 		return err
 	}
 	for _, job := range jobs {
-		fmt.Printf("%s\n", job.String())
+		fmt.Printf("id=%d state=%s result=%s\n", job.ID, job.State, job.Result)
 	}
 	return nil
 }
