@@ -6,10 +6,17 @@ package gopenqa
  */
 
 import (
+	"errors"
+	"fmt"
+	"io"
 	"log"
+	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
+	"time"
 
 	"gotest.tools/assert"
 )
@@ -158,4 +165,167 @@ func TestProduct(t *testing.T) {
 	assert.Equal(t, products[2].Flavor, "DVD")
 	assert.Equal(t, products[2].Settings["BOOT_HDD_IMAGE"], "1")
 	assert.Equal(t, products[2].Settings["HDD_1"], "openSUSE-1-aarch64-DVD.iso")
+}
+
+// GHSA-rwxw-gmm3-whv5: CreateInstance must install safe non-zero defaults.
+func TestCreateInstanceDefaultLimits(t *testing.T) {
+	inst := CreateInstance("http://example.invalid")
+	if inst.httpTimeout != DefaultHTTPTimeout {
+		t.Fatalf("httpTimeout: got %v, want %v", inst.httpTimeout, DefaultHTTPTimeout)
+	}
+	if inst.maxResponseBytes != DefaultMaxResponseBytes {
+		t.Fatalf("maxResponseBytes: got %d, want %d", inst.maxResponseBytes, DefaultMaxResponseBytes)
+	}
+}
+
+// GHSA-rwxw-gmm3-whv5: response bodies larger than the configured limit must fail
+// without an unbounded io.ReadAll of the full body.
+func TestRequestRejectsOversizedResponseBody(t *testing.T) {
+	const maxBytes int64 = 1024
+
+	t.Run("maxBytes+1", func(t *testing.T) {
+		body := strings.Repeat("x", int(maxBytes)+1)
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = io.WriteString(w, body)
+		}))
+		defer srv.Close()
+
+		inst := CreateInstance(srv.URL)
+		inst.SetMaxResponseBytes(maxBytes)
+
+		buf, err := inst.get(srv.URL+"/api/v1/jobs/1", nil)
+		if err == nil {
+			t.Fatal("expected error for body of maxBytes+1, got nil")
+		}
+		if !strings.Contains(err.Error(), "maximum size") {
+			t.Fatalf("expected maximum size error, got: %v", err)
+		}
+		if len(buf) != 0 {
+			t.Fatalf("expected empty buffer on oversize, got %d bytes", len(buf))
+		}
+	})
+
+	// Streaming multi-MiB body: a broken "ReadAll then check len" implementation
+	// would allocate the full payload; LimitReader fails after maxBytes+1 quickly.
+	t.Run("streaming_large_body", func(t *testing.T) {
+		const offerBytes = 8 << 20 // 8 MiB offered; limit is 1 KiB
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			chunk := strings.Repeat("x", 32<<10)
+			written := 0
+			for written < offerBytes {
+				n, err := io.WriteString(w, chunk)
+				written += n
+				if err != nil {
+					return
+				}
+				if f, ok := w.(http.Flusher); ok {
+					f.Flush()
+				}
+			}
+		}))
+		defer srv.Close()
+
+		inst := CreateInstance(srv.URL)
+		inst.SetMaxResponseBytes(maxBytes)
+		inst.SetHTTPTimeout(5 * time.Second)
+
+		start := time.Now()
+		buf, err := inst.get(srv.URL+"/api/v1/jobs/1", nil)
+		elapsed := time.Since(start)
+
+		if err == nil {
+			t.Fatal("expected error for streaming oversized body, got nil")
+		}
+		if !strings.Contains(err.Error(), "maximum size") {
+			t.Fatalf("expected maximum size error, got: %v", err)
+		}
+		if len(buf) != 0 {
+			t.Fatalf("expected empty buffer on oversize, got %d bytes", len(buf))
+		}
+		// Must fail from the size cap, not only after reading multi-MiB then timing out.
+		if elapsed >= 2*time.Second {
+			t.Fatalf("oversize rejection took %v; likely unbounded body read", elapsed)
+		}
+	})
+}
+
+// GHSA-rwxw-gmm3-whv5: a stalling server must not block the client indefinitely.
+func TestRequestTimesOutOnStallingServer(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Stall until the client cancels (Timeout) or a long safety deadline.
+		select {
+		case <-r.Context().Done():
+			return
+		case <-time.After(10 * time.Second):
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = fmt.Fprint(w, `{"job":{}}`)
+	}))
+	defer srv.Close()
+
+	inst := CreateInstance(srv.URL)
+	inst.SetHTTPTimeout(200 * time.Millisecond)
+
+	start := time.Now()
+	_, err := inst.get(srv.URL+"/api/v1/jobs/1", nil)
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("expected timeout error, got nil")
+	}
+	var netErr net.Error
+	if !errors.As(err, &netErr) || !netErr.Timeout() {
+		t.Fatalf("expected net.Error timeout, got: %v", err)
+	}
+	// Must fail well before the handler's safety deadline.
+	if elapsed >= 1500*time.Millisecond {
+		t.Fatalf("request took %v, expected client-side timeout well under 1.5s", elapsed)
+	}
+}
+
+// Bodies exactly at the limit must still succeed (limit is inclusive).
+func TestRequestAcceptsBodyAtExactLimit(t *testing.T) {
+	const maxBytes int64 = 128
+	body := strings.Repeat("a", int(maxBytes))
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, body)
+	}))
+	defer srv.Close()
+
+	inst := CreateInstance(srv.URL)
+	inst.SetMaxResponseBytes(maxBytes)
+
+	buf, err := inst.get(srv.URL+"/api/v1/jobs/1", nil)
+	if err != nil {
+		t.Fatalf("unexpected error for body at exact limit: %v", err)
+	}
+	if string(buf) != body {
+		t.Fatalf("body mismatch: got %d bytes, want %d", len(buf), len(body))
+	}
+}
+
+// Non-positive config must fall back to safe defaults at request time
+// (not "unlimited" and not "reject everything").
+func TestRequestNonPositiveConfigFallsBackToDefaults(t *testing.T) {
+	body := `{"ok":true}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, body)
+	}))
+	defer srv.Close()
+
+	inst := CreateInstance(srv.URL)
+	inst.SetMaxResponseBytes(0)
+	inst.SetHTTPTimeout(0)
+
+	buf, err := inst.get(srv.URL+"/api/v1/jobs/1", nil)
+	if err != nil {
+		t.Fatalf("expected success with non-positive config (defaults apply): %v", err)
+	}
+	if string(buf) != body {
+		t.Fatalf("body mismatch: got %q, want %q", buf, body)
+	}
 }
