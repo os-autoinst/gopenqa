@@ -15,16 +15,25 @@ import (
 	"time"
 )
 
+// DefaultHTTPTimeout is the default total timeout for HTTP requests when none is set.
+const DefaultHTTPTimeout = 30 * time.Second
+
+// DefaultMaxResponseBytes is the default maximum response body size (32 MiB).
+// Prevents unbounded memory growth from malicious or oversized openQA responses.
+const DefaultMaxResponseBytes int64 = 32 << 20
+
 /* Instance defines a openQA instance */
 type Instance struct {
-	URL           string
-	apikey        string
-	apisecret     string
-	verbose       bool
-	maxRecursions int        // Maximum number of recursions
-	userAgent     string     // Useragent sent with the request
-	allowParallel bool       // Allow parallel requests (default: No)
-	mutFetching   sync.Mutex // Mutex to ensure only one request at the time is performed
+	URL              string
+	apikey           string
+	apisecret        string
+	verbose          bool
+	maxRecursions    int           // Maximum number of recursions
+	userAgent        string        // Useragent sent with the request
+	allowParallel    bool          // Allow parallel requests (default: No)
+	httpTimeout      time.Duration // Total HTTP client timeout (0 uses DefaultHTTPTimeout)
+	maxResponseBytes int64         // Max response body bytes (0 uses DefaultMaxResponseBytes)
+	mutFetching      sync.Mutex    // Mutex to ensure only one request at the time is performed
 }
 
 // the settings are given as dict:
@@ -149,7 +158,15 @@ func EmptyParams() map[string]string {
 
 /* Create a openQA instance module */
 func CreateInstance(url string) Instance {
-	return Instance{URL: url, maxRecursions: 10, verbose: false, userAgent: "gopenqa", allowParallel: false}
+	return Instance{
+		URL:              url,
+		maxRecursions:    10,
+		verbose:          false,
+		userAgent:        "gopenqa",
+		allowParallel:    false,
+		httpTimeout:      DefaultHTTPTimeout,
+		maxResponseBytes: DefaultMaxResponseBytes,
+	}
 }
 
 /* Create a openQA instance module for openqa.opensuse.org */
@@ -181,6 +198,18 @@ func (i *Instance) SetUserAgent(userAgent string) {
 // Set to allow or disallow parallel requests to the instance
 func (i *Instance) SetAllowParallel(allow bool) {
 	i.allowParallel = allow
+}
+
+// SetHTTPTimeout sets the total timeout for HTTP requests (connect + headers + body).
+// A non-positive duration falls back to DefaultHTTPTimeout.
+func (i *Instance) SetHTTPTimeout(timeout time.Duration) {
+	i.httpTimeout = timeout
+}
+
+// SetMaxResponseBytes sets the maximum allowed HTTP response body size in bytes.
+// A non-positive value falls back to DefaultMaxResponseBytes.
+func (i *Instance) SetMaxResponseBytes(n int64) {
+	i.maxResponseBytes = n
 }
 
 func assignInstance(jobs []Job, instance *Instance) []Job {
@@ -279,18 +308,32 @@ func (i *Instance) request(method string, url string, data []byte) ([]byte, erro
 		req.Header.Add("X-API-Hash", hash)
 
 	}
-	// Perform request on a new http client
-	c := http.Client{}
+	// Perform request on a new http client with an explicit timeout
+	// (zero Timeout would hang indefinitely on a stalling server — GHSA-rwxw-gmm3-whv5)
+	timeout := i.httpTimeout
+	if timeout <= 0 {
+		timeout = DefaultHTTPTimeout
+	}
+	c := http.Client{Timeout: timeout}
 	r, err := c.Do(req)
 	if err != nil {
 		return make([]byte, 0), err
 	}
 
-	// First read body to have it ready in case of errors
+	// First read body to have it ready in case of errors.
+	// Cap body size so a malicious/oversized response cannot exhaust memory (GHSA-rwxw-gmm3-whv5).
 	defer r.Body.Close()
-	buf, err := io.ReadAll(r.Body) // TODO: Limit read size
+	maxBytes := i.maxResponseBytes
+	if maxBytes <= 0 {
+		maxBytes = DefaultMaxResponseBytes
+	}
+	// Read one extra byte past the limit so we can detect truncation vs exact-limit bodies.
+	buf, err := io.ReadAll(io.LimitReader(r.Body, maxBytes+1))
 	if err != nil {
 		return buf, err
+	}
+	if int64(len(buf)) > maxBytes {
+		return make([]byte, 0), fmt.Errorf("response body exceeds maximum size of %d bytes", maxBytes)
 	}
 
 	// Check status code
