@@ -329,3 +329,42 @@ func TestRequestNonPositiveConfigFallsBackToDefaults(t *testing.T) {
 		t.Fatalf("body mismatch: got %q, want %q", buf, body)
 	}
 }
+
+// GetJobsFollow must preserve Job.Modules when following a cloned job. The clone hop
+// used to go through the single-job endpoint (which never returns Modules, see GetJob's
+// doc comment), silently losing them.
+func TestGetJobsFollowPreservesModules(t *testing.T) {
+	const originalID, cloneID = 100, 200
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/jobs" {
+			http.NotFound(w, r)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		switch r.URL.Query().Get("ids") {
+		case "100":
+			_, _ = io.WriteString(w, `{"jobs":[{"id":100,"clone_id":200}]}`)
+		case "200":
+			_, _ = io.WriteString(w, `{"jobs":[{"id":200,"clone_id":0,"modules":[{"name":"m1","category":"c","result":"passed","flags":["important"]}]}]}`)
+		default:
+			_, _ = io.WriteString(w, `{"jobs":[]}`)
+		}
+	}))
+	defer srv.Close()
+
+	inst := CreateInstance(srv.URL)
+	jobs, err := inst.GetJobsFollow([]int64{originalID})
+	if err != nil {
+		t.Fatalf("GetJobsFollow failed: %v", err)
+	}
+	if len(jobs) != 1 {
+		t.Fatalf("expected 1 job, got %d", len(jobs))
+	}
+	job := jobs[0]
+	if job.ID != cloneID {
+		t.Fatalf("expected followed job id %d, got %d", cloneID, job.ID)
+	}
+	if len(job.Modules) != 1 || job.Modules[0].Name != "m1" {
+		t.Fatalf("expected Modules to be preserved after following clone, got %+v", job.Modules)
+	}
+}

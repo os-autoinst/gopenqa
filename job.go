@@ -4,15 +4,15 @@ import "fmt"
 
 /* Job instance */
 type Job struct {
-	AssignedWorkerID int      `json:"assigned_worker_id"`
-	BlockedByID      int      `json:"blocked_by_id"`
-	Children         Children `json:"children"`
-	Parents          Children `json:"parents"`
-	CloneID          int64    `json:"clone_id"`
-	GroupID          int      `json:"group_id"`
-	ID               int64    `json:"id"`
-	// Modules
-	Name string `json:"name"`
+	AssignedWorkerID int         `json:"assigned_worker_id"`
+	BlockedByID      int         `json:"blocked_by_id"`
+	Children         Children    `json:"children"`
+	Parents          Children    `json:"parents"`
+	CloneID          int64       `json:"clone_id"`
+	GroupID          int         `json:"group_id"`
+	ID               int64       `json:"id"`
+	Modules          []JobModule `json:"modules"`
+	Name             string      `json:"name"`
 	// Parents
 	Priority  int      `json:"priority"`
 	Result    string   `json:"result"`
@@ -49,6 +49,14 @@ type JobState struct {
 	State     string `json:"state"`
 }
 
+/* JobModule is a single test module of a job */
+type JobModule struct {
+	Category string   `json:"category"`
+	Flags    []string `json:"flags"`
+	Name     string   `json:"name"`
+	Result   string   `json:"result"`
+}
+
 /* Format job as a string */
 func (j *Job) String() string {
 	return fmt.Sprintf("%d %s (%s)", j.ID, j.Name, j.Test)
@@ -60,6 +68,21 @@ func (j *Job) JobState() string {
 		return j.Result
 	}
 	return j.State
+}
+
+/* Progress returns the percentage of finished test modules and true, if it could be determined */
+func (j *Job) Progress() (int, bool) {
+	if len(j.Modules) == 0 {
+		return 0, false
+	}
+	done := 0
+	for _, module := range j.Modules {
+		switch module.Result {
+		case "passed", "softfailed", "failed", "skipped":
+			done++
+		}
+	}
+	return (done * 100) / len(j.Modules), true
 }
 
 /* IsCloned returns true, if the job has been cloned/restarted */
