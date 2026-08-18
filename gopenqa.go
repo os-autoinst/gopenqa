@@ -406,16 +406,16 @@ func (job *Job) applyInstance(i *Instance) {
 }
 
 // GetJob fetches detailled job information.
-// Note: Job.Modules is always empty here, since the single-job REST endpoint this uses
-// does not return test module data. Use GetJobs/GetJobsFollow/GetLatestJobs instead if
-// you need Job.Modules/Progress() populated.
+// Returns an error if the job does not exist
 func (i *Instance) GetJob(id int64) (Job, error) {
-	ids := []int64{id}
-	jobs, err := i.GetJobs(ids)
-	if len(jobs) < 1 {
+	jobs, err := i.GetJobs([]int64{id})
+	if err != nil {
 		return Job{}, err
 	}
-	return jobs[0], err
+	if len(jobs) < 1 {
+		return Job{}, fmt.Errorf("job %d not found", id)
+	}
+	return jobs[0], nil
 }
 
 // GetJob fetches detailled information about a list of jobs
@@ -448,8 +448,7 @@ func (inst *Instance) GetJobsFollow(ids []int64) ([]Job, error) {
 	// Fetch cloned jobs one by one. Since it is possible for a job to have two cloned jobs
 	// the relation between an original job and it's cloned job is not directly visible.
 	// This means we have to fetch each job individually, so that we can keep track of the jobs origin.
-	// Note: this deliberately does not use GetJobFollow here, as that fetches from the
-	// single-job endpoint, which would silently drop Job.Modules (see GetJob's doc comment).
+	// Note: do not use GetJobFollow here because it uses this function
 	for i, job := range jobs {
 		if job.IsCloned() {
 			job, err := inst.followClonedJob(job.CloneID)
@@ -462,9 +461,8 @@ func (inst *Instance) GetJobsFollow(ids []int64) ([]Job, error) {
 	return jobs, nil
 }
 
-// followClonedJob follows a chain of CloneIDs like GetJobFollow, but fetches each hop via
-// the list endpoint (GetJobs) instead of the single-job endpoint, so that Job.Modules stays
-// populated.
+// followClonedJob returns the job at the end of a chain of CloneIDs.
+// Fails if the chain is longer than the configured maximum recursion depth.
 func (inst *Instance) followClonedJob(id int64) (Job, error) {
 	for recursion := 0; recursion < inst.maxRecursions; recursion++ {
 		jobs, err := inst.GetJobs([]int64{id})
@@ -494,14 +492,16 @@ func (i *Instance) DeleteJob(id int64) error {
 }
 
 // GetJob fetches detailled job information and follows the job, if it contains a CloneID.
-// Note: Job.Modules is always empty here, for the same reason as in GetJob.
+// Returns an error if the job does not exist.
 func (inst *Instance) GetJobFollow(id int64) (Job, error) {
-	ids := []int64{id}
-	jobs, err := inst.GetJobsFollow(ids)
-	if len(jobs) < 1 {
+	jobs, err := inst.GetJobsFollow([]int64{id})
+	if err != nil {
 		return Job{}, err
 	}
-	return jobs[0], err
+	if len(jobs) < 1 {
+		return Job{}, fmt.Errorf("job %d not found", id)
+	}
+	return jobs[0], nil
 }
 
 // GetJobState uses the (currently experimental) API call to quickly fetch a job state
