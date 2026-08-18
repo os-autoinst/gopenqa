@@ -16,7 +16,7 @@ import (
 )
 
 // DefaultHTTPTimeout is the default total timeout for HTTP requests when none is set.
-const DefaultHTTPTimeout = 30 * time.Second
+const DefaultHTTPTimeout = 120 * time.Second
 
 // DefaultMaxResponseBytes is the default maximum response body size (32 MiB).
 // Prevents unbounded memory growth from malicious or oversized openQA responses.
