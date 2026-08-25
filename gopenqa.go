@@ -212,14 +212,6 @@ func (i *Instance) SetMaxResponseBytes(n int64) {
 	i.maxResponseBytes = n
 }
 
-func assignInstance(jobs []Job, instance *Instance) []Job {
-	for i, j := range jobs {
-		j.instance = instance
-		jobs[i] = j
-	}
-	return jobs
-}
-
 func hmac_sha1(secret string, key string) []byte {
 	h := hmac.New(sha1.New, []byte(key))
 	h.Write([]byte(secret))
@@ -366,43 +358,28 @@ func (i *Instance) GetOverview(testsuite string, params map[string]string) ([]Jo
 		url += "?" + mergeParams(params)
 	}
 
-	jobs, err := i.fetchJobs(url)
-	assignInstance(jobs, i)
-	return jobs, err
+	return i.fetchJobs(url)
 }
 
 /* Get only the latest jobs of a certain testsuite. Testsuite must be given here.
  * Additional parameters can be supplied via the params map (See GetOverview for more info about usage of those parameters)
  */
 func (i *Instance) GetLatestJobs(testsuite string, params map[string]string) ([]Job, error) {
-	// Expected result structure
-	type ResultJob struct {
-		Jobs []Job `json:"jobs"`
-	}
-	var jobs ResultJob
 	if testsuite != "" {
 		params["test"] = testsuite
 	}
 	url := fmt.Sprintf("%s/api/v1/jobs", i.URL)
-	if testsuite != "" {
-		params["test"] = testsuite
+	if len(params) > 0 {
+		url += "?" + mergeParams(params)
 	}
-	url += "?" + mergeParams(params)
-	// Fetch jobs here, as we expect it to be in `jobs`
-	resp, err := i.request("GET", url, nil)
+	jobs, err := i.fetchJobsArray(url)
 	if err != nil {
-		return jobs.Jobs, err
-	}
-	err = json.Unmarshal(resp, &jobs)
-	if err != nil {
-		return jobs.Jobs, err
+		return jobs, err
 	}
 
 	// Now, get only the latest job per group_id
 	mapped := make(map[int]Job)
-	for _, job := range jobs.Jobs {
-		job.instance = i
-		job.Remote = i.URL
+	for _, job := range jobs {
 		// TODO: Filter job results, if given
 
 		// Only keep newer jobs (by ID) per group
@@ -429,13 +406,16 @@ func (job *Job) applyInstance(i *Instance) {
 }
 
 // GetJob fetches detailled job information.
-// Note: Job.Modules is always empty here, since the single-job REST endpoint this uses
-// does not return test module data. Use GetJobs/GetJobsFollow/GetLatestJobs instead if
-// you need Job.Modules/Progress() populated.
+// Returns an error if the job does not exist
 func (i *Instance) GetJob(id int64) (Job, error) {
-	url := fmt.Sprintf("%s/api/v1/jobs/%d", i.URL, id)
-	job, err := i.fetchJob(url)
-	return job, err
+	jobs, err := i.GetJobs([]int64{id})
+	if err != nil {
+		return Job{}, err
+	}
+	if len(jobs) < 1 {
+		return Job{}, fmt.Errorf("job %d not found", id)
+	}
+	return jobs[0], nil
 }
 
 // GetJob fetches detailled information about a list of jobs
@@ -468,11 +448,10 @@ func (inst *Instance) GetJobsFollow(ids []int64) ([]Job, error) {
 	// Fetch cloned jobs one by one. Since it is possible for a job to have two cloned jobs
 	// the relation between an original job and it's cloned job is not directly visible.
 	// This means we have to fetch each job individually, so that we can keep track of the jobs origin.
-	// Note: this deliberately does not use GetJobFollow here, as that fetches from the
-	// single-job endpoint, which would silently drop Job.Modules (see GetJob's doc comment).
+	// Note: do not use GetJobFollow here because it uses this function
 	for i, job := range jobs {
 		if job.IsCloned() {
-			job, err := inst.followClonedJob(job.ID)
+			job, err := inst.followClonedJob(job.CloneID)
 			if err != nil {
 				return jobs, err
 			}
@@ -482,9 +461,8 @@ func (inst *Instance) GetJobsFollow(ids []int64) ([]Job, error) {
 	return jobs, nil
 }
 
-// followClonedJob follows a chain of CloneIDs like GetJobFollow, but fetches each hop via
-// the list endpoint (GetJobs) instead of the single-job endpoint, so that Job.Modules stays
-// populated.
+// followClonedJob returns the job at the end of a chain of CloneIDs.
+// Fails if the chain is longer than the configured maximum recursion depth.
 func (inst *Instance) followClonedJob(id int64) (Job, error) {
 	for recursion := 0; recursion < inst.maxRecursions; recursion++ {
 		jobs, err := inst.GetJobs([]int64{id})
@@ -514,21 +492,16 @@ func (i *Instance) DeleteJob(id int64) error {
 }
 
 // GetJob fetches detailled job information and follows the job, if it contains a CloneID.
-// Note: Job.Modules is always empty here, for the same reason as in GetJob.
+// Returns an error if the job does not exist.
 func (inst *Instance) GetJobFollow(id int64) (Job, error) {
-	for recursion := 0; recursion < inst.maxRecursions; recursion++ {
-		url := fmt.Sprintf("%s/api/v1/jobs/%d", inst.URL, id)
-		job, err := inst.fetchJob(url)
-		if err != nil {
-			return job, err
-		}
-		if job.IsCloned() {
-			id = job.CloneID
-			continue
-		}
-		return job, nil
+	jobs, err := inst.GetJobsFollow([]int64{id})
+	if err != nil {
+		return Job{}, err
 	}
-	return Job{}, fmt.Errorf("maximum recusion depth reached")
+	if len(jobs) < 1 {
+		return Job{}, fmt.Errorf("job %d not found", id)
+	}
+	return jobs[0], nil
 }
 
 // GetJobState uses the (currently experimental) API call to quickly fetch a job state
@@ -695,21 +668,6 @@ func (i *Instance) fetchMachines(url string) ([]Machine, error) {
 		return ret, err
 	}
 	return make([]Machine, 0), nil
-}
-
-func (inst *Instance) fetchJob(url string) (Job, error) {
-	type ResultJob struct { // Expected result structure
-		Job Job `json:"job"`
-	}
-	var job ResultJob
-	resp, err := inst.get(url, nil)
-	if err != nil {
-		return job.Job, err
-	}
-	// TODO: Sometimes SizeLimit is returned as string but it should be an int. Fix this.
-	err = json.Unmarshal(resp, &job)
-	job.Job.applyInstance(inst)
-	return job.Job, err
 }
 
 func (i *Instance) fetchJobState(url string) (JobState, error) {
